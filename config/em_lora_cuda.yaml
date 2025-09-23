@@ -1,22 +1,22 @@
 # Composed dataset
-train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/images"
-train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/masks"
-val_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/images"
-val_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/masks"
+train_img_dir: "/home/cfuste/scratch/datasets/DINO-POC/train/images"
+train_mask_dir: "/home/cfuste/scratch/datasets/DINO-POC/train/masks"
+val_img_dir:   "/home/cfuste/scratch/datasets/DINO-POC/test/images"
+val_mask_dir:  "/home/cfuste/scratch/datasets/DINO-POC/test/masks"
 
 num_classes: 2
 binarize: true
 binarize_threshold: 128
 
 # larger / faster on GPUs
-img_size: [308, 308]     # 22×22 tokens (14×22 = 308)
+img_size: [392, 392]     # 22×22 tokens (14×22 = 308)
 batch_size: 8
 num_workers: 8
 
 # model & LoRA
-dino_size: "base"        # vitb14
+dino_size: "base"        # choose one: small, base, large, giant
 use_lora: true
-lora_rank: 8
+lora_rank: 8          # 4, 8, 16
 lora_alpha: 16
 lora_targets: ["attn.qkv","attn.proj"]
 

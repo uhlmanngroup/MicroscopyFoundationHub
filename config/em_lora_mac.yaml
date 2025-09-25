@@ -25,7 +25,7 @@ device: "auto"           # will pick "mps" on your Mac
 amp: false               # easiest on MPS unless you added the device-aware AMP patch
 
 # training
-epochs: 20
+epochs: 10
 lr: 1.0e-3
 weight_decay: 1.0e-4
 save_every: 5

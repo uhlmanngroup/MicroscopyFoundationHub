@@ -3,7 +3,8 @@ import yaml
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
-from torchvision.utils import save_image
+from torchvision.utils import save_image, make_grid
+import torch.nn.functional as F
 
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
 from dino_peft.utils.transforms import em_seg_transforms
@@ -165,12 +166,58 @@ class SegTrainer:
         return loss.item(), logits
 
     @torch.no_grad()
+    def _colorize_mask(self, m: torch.Tensor, num_classes: int):
+        """
+        m: (B,H,W) long {0..K-1} -> (B,3,H,W) float in [0,1]
+        simple palette: bg=black, fg=white for K=2; otherwise a few distinct colors
+        """
+        K = num_classes
+        B, H, W = m.shape
+        out = torch.zeros(B, 3, H, W, device=m.device, dtype=torch.float32)
+        if K == 2:
+            out[:, :, :, :] = 0.0
+            out[:, 0] = (m == 1).float()  # white
+            out[:, 1] = (m == 1).float()
+            out[:, 2] = (m == 1).float()
+        else:
+            palette = torch.tensor([
+                [0,0,0], [1,0,0], [0,1,0], [0,0,1], [1,1,0],
+                [1,0,1], [0,1,1], [1,0.5,0], [0.5,0,1], [0.5,0.5,0.5]
+            ], device=m.device, dtype=torch.float32)
+            for k in range(min(K, palette.shape[0])):
+                maskk = (m == k).unsqueeze(1).float()
+                out += maskk * palette[k].view(1,3,1,1)
+            out.clamp_(0,1)
+        return out
+
+    @torch.no_grad()
     def _save_preview(self, imgs, logits, masks, step_tag: str):
-        pred = logits.argmax(1).float().unsqueeze(1)   # (B,1,H,W)
         grid_dir = self.out_dir / "previews"
         grid_dir.mkdir(exist_ok=True, parents=True)
-        save_image((imgs[:4].clamp(0,1)), grid_dir / f"{step_tag}_img.png")
-        save_image((pred[:4] / (self.cfg["num_classes"] - 1)).clamp(0,1), grid_dir / f"{step_tag}_pred.png")
+
+        # move to CPU for saving (safe on CUDA/MPS)
+        imgs_cpu  = imgs[:4].detach().cpu().clamp(0, 1)        # (B,3,h,w)
+        preds_cpu = logits[:4].detach().argmax(1).cpu()        # (B,h,w)
+        gts_cpu   = masks[:4].detach().cpu()                   # (B,h,w)
+
+        # colorize on CPU
+        pred_rgb = self._colorize_mask(preds_cpu, self.cfg["num_classes"])  # (B,3,H,W)
+        gt_rgb   = self._colorize_mask(gts_cpu,   self.cfg["num_classes"])
+
+        # size match
+        H, W = gts_cpu.shape[-2:]
+        if imgs_cpu.shape[-2:] != (H, W):
+            imgs_cpu = F.interpolate(imgs_cpu, size=(H, W), mode="bilinear", align_corners=False)
+
+        # save strips
+        save_image(imgs_cpu,  grid_dir / f"{step_tag}_img.png",  nrow=4)
+        save_image(pred_rgb,  grid_dir / f"{step_tag}_pred.png", nrow=4)
+        save_image(gt_rgb,    grid_dir / f"{step_tag}_gt.png",   nrow=4)
+
+        # triptych (img | pred | gt)
+        trip = torch.cat([imgs_cpu, pred_rgb, gt_rgb], dim=0)
+        grid = make_grid(trip, nrow=4)
+        save_image(grid, grid_dir / f"{step_tag}_triptych.png")
 
     def train(self):
         best_val = 1e9
@@ -194,6 +241,12 @@ class SegTrainer:
                     if i == 0:
                         imgs, masks = batch
                         self._save_preview(imgs, logits, masks, f"ep{epoch:03d}")
+                        with torch.no_grad():
+                            pred = logits.argmax(1)
+                            for k in range(self.cfg["num_classes"]):
+                                gt_k   = (masks == k).sum().item()
+                                pred_k = (pred  == k).sum().item()
+                                print(f"[val@ep{epoch:03d}] class {k}: GT_pixels={gt_k}  PRED_pixels={pred_k}")
             val_loss /= max(1, len(self.val_loader))
 
             print(f"[epoch {epoch}/{self.epochs}] train_loss={avg_train:.4f}  val_loss={val_loss:.4f}")

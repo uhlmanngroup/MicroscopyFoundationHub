@@ -7,8 +7,11 @@ out_dir: runs/exp_stability_tversky
 
 # ---- model / backbone ----
 dino_size: base
-img_size: [476, 476]
+img_size: [518, 518]
 num_classes: 2
+
+# ---- MLflow ----
+mlflow_experiment_name: Lora-Dice-R16-img518
 
 # ---- LoRA ----
 use_lora: true
@@ -26,7 +29,7 @@ device: auto
 amp: true            # first run: stability check without AMP
 
 # ---- loss (CE + Tversky on foreground) ----
-loss: ce_tversky      
+loss: dice      # ce, dice, ce_tversky 
 class_weights: [1.0, 15.0]    # bg, fg
 tversky_alpha: 0.7
 tversky_beta: 0.3

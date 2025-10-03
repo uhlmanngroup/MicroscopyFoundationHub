@@ -4,6 +4,7 @@ import os
 import torch
 import mlflow
 import torch.nn as nn
+import monai
 from torch.utils.data import DataLoader, random_split
 from torchvision.utils import save_image, make_grid
 import torch.nn.functional as F
@@ -63,6 +64,8 @@ def build_criterion(cfg, device):
         def _crit(logits, target):
             return (1.0 - lam) * ce(logits, target) + lam * tv(logits, target)
         return _crit
+    elif loss_name == "dice":
+        return monai.losses.DiceLoss(to_onehot_y=False, softmax=True)
     else:
         raise ValueError(f"Unknown loss: {loss_name}")
 
@@ -208,7 +211,7 @@ class SegTrainer:
         with self.autocast():
             feats  = self.backbone(imgs)               # (B, C, H', W')
             logits = self.head(feats, out_hw)          # (B, K, H, W)
-            loss   = self.criterion(logits, masks)
+            loss   = self.criterion(logits[:,1,:,:], masks)
 
         if not torch.isfinite(loss):
             print("Non-finite loss encountered; skipping step.")
@@ -299,6 +302,7 @@ class SegTrainer:
         run_name = f"{self.cfg.get('dino_size','?')}_img{self.cfg['img_size'][0]}_{'lora' if self.cfg.get('use_lora',True) else 'head'}"
 
         # === Everything MLflow happens here ===
+        mlflow.set_experiment(self.cfg.get("mlflow_experiment_name", "default")) 
         with mlflow.start_run(run_name=run_name) as run:
             r = mlflow.active_run()
             assert r is not None, "MLflow run did not start"

@@ -215,8 +215,8 @@ class SegTrainer:
 
         imgs_vis = denorm_imagenet(imgs_cpu).clamp(0,1)
 
-        pred_rgb = self.colorize_mask(preds_cpu, self.cfg["num_classes"])
-        gt_rgb   = self.colorize_mask(gts_cpu,   self.cfg["num_classes"])
+        pred_rgb = colorize_mask(preds_cpu, self.cfg["num_classes"])
+        gt_rgb   = colorize_mask(gts_cpu,   self.cfg["num_classes"])
 
         H, W = gts_cpu.shape[-2:]
         if imgs_vis.shape[-2:] != (H, W):

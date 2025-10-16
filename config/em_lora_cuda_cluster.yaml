@@ -3,7 +3,7 @@ train_img_dir: /home/cfuste/data/datasets/DINO-POC/train/images
 train_mask_dir: /home/cfuste/data/datasets/DINO-POC/train/masks
 test_img_dir:    /home/cfuste/data/datasets/DINO-POC/test/images
 test_mask_dir:   /home/cfuste/data/datasets/DINO-POC/test/masks
-out_dir: runs/exp_stability_dice_r16_img518
+out_dir: runs/lora_dice_r16_img518
 
 # ---- model / backbone ----
 dino_size: base

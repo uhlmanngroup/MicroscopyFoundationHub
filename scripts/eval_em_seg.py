@@ -3,22 +3,28 @@ from pathlib import Path
 import argparse, yaml, torch, numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import numpy as np
 import csv
 import os
 import mlflow
 from mlflow import MlflowClient
+import torch.nn.functional as F
 
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
 from dino_peft.utils.transforms import em_seg_transforms, denorm_imagenet
 from dino_peft.utils.viz import colorize_mask
+from dino_peft.utils.plots import save_triptych_grid
 from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 
-from torchvision.utils import save_image, make_grid
-import torch.nn.functional as F
 
 @torch.no_grad()
-def eval_loop(backbone, head, loader, device, num_classes, out_dir=None, preview_n=6):
+def eval_loop(
+    backbone, head, loader, device, num_classes,
+    out_dir: Path | None = None, ckpt_tag: str = "model",
+    preview_n: int = 4,              # kept for compatibility (unused when saving all)
+    save_all_triptychs: bool = True 
+):
     inter = np.zeros(num_classes, dtype=np.float64)
     union = np.zeros(num_classes, dtype=np.float64)
     tp = np.zeros(num_classes, dtype=np.float64)
@@ -36,15 +42,15 @@ def eval_loop(backbone, head, loader, device, num_classes, out_dir=None, preview
     fg_gt_pix = 0.0
     fg_pr_pix = 0.0
 
-    prev_count = 0
     prev_dir = None
     if out_dir is not None:
         prev_dir = Path(out_dir) / "eval_previews"
         prev_dir.mkdir(parents=True, exist_ok=True)
 
-    for b, (imgs, masks) in enumerate(tqdm(loader, desc="eval")):
-        imgs = imgs.to(device)
-        masks = masks.to(device)
+    for b, (imgs, masks, names) in enumerate(tqdm(loader, desc="eval")):
+        imgs  = imgs.to(device, non_blocking=True)
+        masks = masks.to(device, non_blocking=True)
+
         feats = backbone(imgs)
         logits = head(feats, masks.shape[-2:])
         pred = logits.argmax(1)
@@ -73,36 +79,54 @@ def eval_loop(backbone, head, loader, device, num_classes, out_dir=None, preview
         fg_fn    += (~pk_fg & mk_fg).sum().item()
         fg_gt_pix += mk_fg.sum().item()
         fg_pr_pix += pk_fg.sum().item()
+    
+        # ---------------- Triptych saving (grouped) ----------------
+        if prev_dir is not None:
+            # de-normalize once per batch
+            imgs_vis = denorm_imagenet(imgs.detach().cpu()).clamp(0, 1)   # (B,C,H?,W?)
+            gts_cpu  = masks.detach().cpu()                               # (B,H,W)
+            preds_cp = logits.detach().argmax(1).cpu()                    # (B,H,W)
 
-        # Previews (triptychs)
-        if prev_dir is not None and prev_count < preview_n:
-            H, W = masks.shape[-2:]
-            im = denorm_imagenet(imgs)
-            if im.shape[-2:] != (H,W):
-                im = F.interpolate(im, size=(H,W), mode="bilinear", align_corners=False)
-            im = im.clamp(0,1)
+            H, W = gts_cpu.shape[-2:]
+            if imgs_vis.shape[-2:] != (H, W):
+                imgs_vis = F.interpolate(imgs_vis, size=(H, W), mode="bilinear", align_corners=False)
 
-            pr_rgb = colorize_mask(pred, num_classes)
-            gt_rgb = colorize_mask(masks, num_classes)
-            
-            trip = torch.cat([im, pr_rgb, gt_rgb], dim=0)
-            save_image(make_grid(trip, nrow=im.shape[0]), prev_dir / f"sample_{b:04d}.png")
-            prev_count += 1
+            pred_rgb = colorize_mask(preds_cp, num_classes)               # (B,3,H,W)
+            gt_rgb   = colorize_mask(gts_cpu,   num_classes)
+
+            # ==== NEW: group into grids of N columns ====
+            group_cols = 4                                  # <- change if you want
+            if "trip_buf" not in locals():
+                trip_buf = []                               # persistent across batches
+                trip_count = 0
+
+            B = imgs_vis.size(0)
+            for j in range(B):
+                trip_buf.append({
+                    "image": imgs_vis[j],
+                    "gt":    gt_rgb[j],
+                    "pred":  pred_rgb[j],
+                    "name":  str(names[j]),
+                })
+                # when buffer reaches N, flush to disk
+                if len(trip_buf) == group_cols:
+                    out_png = Path(prev_dir) / f"eval_triptych_{ckpt_tag}_g{trip_count:04d}.png"
+                    save_triptych_grid(
+                        trip_buf,
+                        out_path=str(out_png),
+                        title=f"Evaluation — {ckpt_tag} — group {trip_count}"
+                    )
+                    trip_buf = []
+                    trip_count += 1
 
     eps = 1e-7
-    iou = inter / (union + eps)
+    iou  = inter / (union + eps)
     dice = (2 * tp) / (2 * tp + fp + fn + eps)
 
-    # Foreground-only metrics
     iou_f  = fg_inter / (fg_union + eps)
     dice_f = (2 * fg_tp) / (2 * fg_tp + fg_fp + fg_fn + eps)
 
-    print("Class pixel totals (GT):", gt_pix.astype(int).tolist())
-    print("Class pixel totals (PR):", pr_pix.astype(int).tolist())
-    print(f"Foreground totals (GT, PR): {int(fg_gt_pix)} {int(fg_pr_pix)}")
-    for k in range(num_classes):
-        if gt_pix[k] == 0:
-            print(f"[WARN] test set has ZERO GT pixels for class {k} — IoU/Dice per-class not meaningful.")
+    # Sanity notes (optional)
     if fg_gt_pix == 0:
         print("[WARN] test set has ZERO foreground pixels — IoU_f/Dice_f not meaningful.")
 

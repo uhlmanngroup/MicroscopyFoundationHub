@@ -114,6 +114,8 @@ class PairedDirsSegDataset(Dataset):
     def __getitem__(self, idx):
         ip, mp = self.pairs[idx]
 
+        # Save in name the basename of the image path
+        name = ip.stem
         # image
         img = self._load_rgb(ip).resize(self.img_size, Image.BICUBIC)
 
@@ -149,5 +151,5 @@ class PairedDirsSegDataset(Dataset):
         else:
             mask = mask.astype(np.int64)
 
-        return img, torch.from_numpy(mask)
+        return img, torch.from_numpy(mask), name
 

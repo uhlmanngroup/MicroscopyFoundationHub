@@ -6,13 +6,13 @@ import mlflow
 import torch.nn as nn
 import monai
 from torch.utils.data import DataLoader, random_split
-from torchvision.utils import save_image, make_grid
 import torch.nn.functional as F
-from mlflow.tracking import MlflowClient  # <-- needed
+from mlflow.tracking import MlflowClient 
 
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
 from dino_peft.utils.transforms import em_seg_transforms, denorm_imagenet
 from dino_peft.utils.viz import colorize_mask
+from dino_peft.utils.plots import save_triptych_grid
 from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
 from dino_peft.models.lora import inject_lora, lora_parameters
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
@@ -203,33 +203,6 @@ class SegTrainer:
             for n in self.lora_names:
                 f.write(n + "\n")
 
-
-    @torch.no_grad()
-    def _save_preview(self, imgs, logits, masks, step_tag: str):
-        grid_dir = self.out_dir / "previews"
-        grid_dir.mkdir(exist_ok=True, parents=True)
-
-        imgs_cpu  = imgs[:4].detach().cpu().clamp(0, 1)
-        preds_cpu = logits[:4].detach().argmax(1).cpu()
-        gts_cpu   = masks[:4].detach().cpu()
-
-        imgs_vis = denorm_imagenet(imgs_cpu).clamp(0,1)
-
-        pred_rgb = colorize_mask(preds_cpu, self.cfg["num_classes"])
-        gt_rgb   = colorize_mask(gts_cpu,   self.cfg["num_classes"])
-
-        H, W = gts_cpu.shape[-2:]
-        if imgs_vis.shape[-2:] != (H, W):
-            imgs_vis = F.interpolate(imgs_vis, size=(H, W), mode="bilinear", align_corners=False)
-
-        save_image(imgs_vis,  grid_dir / f"{step_tag}_img.png",  nrow=4)
-        save_image(pred_rgb,  grid_dir / f"{step_tag}_pred.png", nrow=4)
-        save_image(gt_rgb,    grid_dir / f"{step_tag}_gt.png",   nrow=4)
-
-        trip = torch.cat([imgs_vis, pred_rgb, gt_rgb], dim=0)
-        grid = make_grid(trip, nrow=4)
-        save_image(grid, grid_dir / f"{step_tag}_triptych.png")
-
     # ---------- MLflow helpers ----------
     def _resolve_mlflow_tracking(self):
         # Prefer env vars; fallback to defaults
@@ -302,7 +275,7 @@ class SegTrainer:
 
                 running = 0.0
                 # TRAIN
-                for imgs, masks in self.train_loader:
+                for imgs, masks, _ in self.train_loader:
                     masks = masks.long()
                     imgs = imgs.to(self.device, non_blocking=True)
                     masks = masks.to(self.device, non_blocking=True)
@@ -329,7 +302,7 @@ class SegTrainer:
                 bg_gt_total = bg_pred_total = 0
 
                 with torch.no_grad():
-                    for i, (imags, masks) in enumerate(self.val_loader):
+                    for i, (imags, masks, names) in enumerate(self.val_loader):
                         masks = masks.long()
                         imgs = imags.to(self.device, non_blocking=True)
                         masks = masks.to(self.device, non_blocking=True)
@@ -346,7 +319,47 @@ class SegTrainer:
                         bg_pred_total+= (pred  == 0).sum().item()
 
                         if i == 0:
-                            self._save_preview(imgs, logits, masks, f"ep{epoch:03d}")
+                            # ---- Save a labeled triptych (first batch only) ----
+                            grid_dir = self.out_dir / "previews"
+                            grid_dir.mkdir(parents=True, exist_ok=True)
+
+                            # Show up to K samples
+                            K = min(4, imgs.size(0))
+
+                            # (B, H, W) int class indices
+                            preds_cpu = logits[:K].detach().argmax(1).cpu()
+                            gts_cpu   = masks[:K].detach().cpu()
+
+                            # de-normalize images for visualization
+                            imgs_vis = denorm_imagenet(imags[:K].detach().cpu()).clamp(0, 1)  # use original imags from loader
+
+                            # resize imgs to match mask size if needed
+                            H, W = gts_cpu.shape[-2:]
+                            if imgs_vis.shape[-2:] != (H, W):
+                                imgs_vis = F.interpolate(imgs_vis, size=(H, W), mode="bilinear", align_corners=False)
+
+                            # colorize masks (RGB tensors, [0,1])
+                            pred_rgb = colorize_mask(preds_cpu, self.cfg["num_classes"])
+                            gt_rgb   = colorize_mask(gts_cpu,   self.cfg["num_classes"])
+
+                            # column titles from dataset names
+                            col_names = [str(n) for n in list(names)[:K]]
+
+                            # pack samples
+                            samples = []
+                            for j in range(K):
+                                samples.append({
+                                    "image": imgs_vis[j],  # CxHxW tensor is fine
+                                    "gt":    gt_rgb[j],    # already RGB
+                                    "pred":  pred_rgb[j],  # already RGB
+                                    "name":  col_names[j],
+                                })
+
+                            save_triptych_grid(
+                                samples,
+                                out_path=str(grid_dir / f"ep{epoch:03d}_triptych.png"),
+                                title=f"Epoch {epoch} — Validation Triptychs"
+                            )
 
                 val_loss /= max(1, len(self.val_loader))
                 print(f"[epoch {epoch}/{self.epochs}] train_loss={avg_train:.4f}  val_loss={val_loss:.4f}")

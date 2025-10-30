@@ -1,11 +1,18 @@
 # Composed dataset (train/test already prepared)
-train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/images"
-train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/masks"
-test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/images"
-test_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/masks"
+# train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/images"
+# train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/masks"
+# test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/images"
+# test_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/masks"
+
+# only Lucchi
+train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/Lucchi++/Train_In"
+train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/Lucchi++/Train_Out"
+test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/Lucchi++/Test_In"
+test_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/Lucchi++/Test_Out"
 
 # outputs
-out_dir: "/Users/cfuste/Documents/Results/DINO-PEFT/small-350-r8-dice"
+# out_dir: "/Users/cfuste/Documents/Results/DINO-PEFT/small-350-r8-dice"
+out_dir: "/Users/cfuste/Documents/Results/DINO-LoRA/small-350-r8-dice-ONLYlucchi"
 
 # ---- model / backbone ----
 dino_size: small

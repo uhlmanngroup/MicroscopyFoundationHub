@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from mlflow.tracking import MlflowClient 
 
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
+from dino_peft.datasets.lucchi_seg import LucchiSegDataset
 from dino_peft.utils.transforms import em_seg_transforms, denorm_imagenet
 from dino_peft.utils.viz import colorize_mask
 from dino_peft.utils.plots import save_triptych_grid
@@ -97,15 +98,28 @@ class SegTrainer:
         t_val   = em_seg_transforms(tuple(self.cfg["img_size"]))                                             # simplest: no transform in val
 
         # -------- base dataset (NO transform) ----------
-        base_ds = PairedDirsSegDataset(
-            self.cfg["train_img_dir"], 
+        base_ds = LucchiSegDataset(
+            self.cfg["train_img_dir"],
             self.cfg["train_mask_dir"],
-            img_size=self.cfg["img_size"], 
-            to_rgb=True, 
-            transform=None,
+            img_size=self.cfg["img_size"],
+            to_rgb=True,
+            transform=None,             # no transform here
             binarize=bool(self.cfg.get("binarize", True)),
             binarize_threshold=int(self.cfg.get("binarize_threshold", 128)),
+            recursive=False,
+            zfill_width=4,
+            image_prefix="mask",
         )
+        
+        #  base_ds = PairedDirsSegDataset(
+        #     self.cfg["train_img_dir"], 
+        #     self.cfg["train_mask_dir"],
+        #     img_size=self.cfg["img_size"], 
+        #     to_rgb=True, 
+        #     transform=None,
+        #     binarize=bool(self.cfg.get("binarize", True)),
+        #     binarize_threshold=int(self.cfg.get("binarize_threshold", 128)),
+        # )
 
         # -------- 10% validation split ----------
         val_ratio = float(self.cfg.get("val_ratio", 0.1))
@@ -117,12 +131,23 @@ class SegTrainer:
         train_idx, val_idx = perm[:n_train], perm[n_train:]
 
         def make_subset_dataset(src_ds, index_list, transform):
-            ds = PairedDirsSegDataset(
-                self.cfg["train_img_dir"], self.cfg["train_mask_dir"],
-                img_size=self.cfg["img_size"], to_rgb=True, transform=transform,
-                binarize=bool(self.cfg.get("binarize", True)),
-                binarize_threshold=int(self.cfg.get("binarize_threshold", 128)),
+            ds = LucchiSegDataset(
+            self.cfg["train_img_dir"], self.cfg["train_mask_dir"],
+            img_size=self.cfg["img_size"], to_rgb=True, transform=t_train,
+            binarize=bool(self.cfg.get("binarize", True)),
+            binarize_threshold=int(self.cfg.get("binarize_threshold", 128)),
+            recursive=False,     # set True if Lucchi has subfolders
+            zfill_width=4,       # "7" -> "0007"
+            image_prefix="mask", # "mask0007" -> "0007"
             )
+            
+            # ds = PairedDirsSegDataset(
+            #     self.cfg["train_img_dir"], self.cfg["train_mask_dir"],
+            #     img_size=self.cfg["img_size"], to_rgb=True, transform=transform,
+            #     binarize=bool(self.cfg.get("binarize", True)),
+            #     binarize_threshold=int(self.cfg.get("binarize_threshold", 128)),
+            # )
+            
             ds.pairs = [src_ds.pairs[i] for i in index_list]
             return ds
 

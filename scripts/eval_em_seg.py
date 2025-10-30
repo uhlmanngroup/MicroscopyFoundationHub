@@ -11,6 +11,7 @@ from mlflow import MlflowClient
 import torch.nn.functional as F
 
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
+from dino_peft.datasets.lucchi_seg import LucchiSegDataset
 from dino_peft.utils.transforms import em_seg_transforms, denorm_imagenet
 from dino_peft.utils.viz import colorize_mask
 from dino_peft.utils.plots import save_triptych_grid
@@ -169,11 +170,20 @@ def main():
 
     # dataset (test split from cfg)
     t = em_seg_transforms(tuple(cfg["img_size"]))
-    ds = PairedDirsSegDataset(
+    # ds = PairedDirsSegDataset(
+    #     cfg["test_img_dir"], cfg["test_mask_dir"],
+    #     img_size=cfg["img_size"], to_rgb=True, transform=t,
+    #     binarize=bool(cfg.get("binarize", True)),
+    #     binarize_threshold=int(cfg.get("binarize_threshold", 128)),
+    # )
+    ds = LucchiSegDataset(
         cfg["test_img_dir"], cfg["test_mask_dir"],
         img_size=cfg["img_size"], to_rgb=True, transform=t,
         binarize=bool(cfg.get("binarize", True)),
         binarize_threshold=int(cfg.get("binarize_threshold", 128)),
+        recursive=False,
+        zfill_width=4,
+        image_prefix="mask",
     )
 
     loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=4,

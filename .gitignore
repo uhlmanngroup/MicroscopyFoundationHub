@@ -11,12 +11,10 @@ mlruns/*
 smoke.txt
 
 # Cluster Setup
-slurm/*
 logs/*
 runs/*
 *.out
 *.err
-*.sbatch
 
 # Macbook Setup
 .vscode/*

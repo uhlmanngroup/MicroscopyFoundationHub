@@ -3,7 +3,7 @@ from dino_peft.trainers.seg_trainer import SegTrainer
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cfg", type=str, default="configs/em_lora.yaml")
+    ap.add_argument("--cfg", type=str, default="config/lucchi_lora_mac.yaml")
     args = ap.parse_args()
 
     trainer = SegTrainer(args.cfg)

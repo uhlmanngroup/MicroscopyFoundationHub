@@ -144,6 +144,46 @@ def _pick_device():
         return torch.device("mps")
     return torch.device("cpu")
 
+def _build_dataset(cfg, split: str, transform):
+    split = split.lower()
+    img_key = f"{split}_img_dir"
+    mask_key = f"{split}_mask_dir"
+    if img_key not in cfg or mask_key not in cfg:
+        raise KeyError(f"Config missing '{img_key}' or '{mask_key}' for eval split='{split}'")
+
+    dataset_cfg = cfg.get("dataset", {})
+    dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
+    params = dataset_cfg.get("params") or {}
+    common = dict(
+        image_dir=cfg[img_key],
+        mask_dir=cfg[mask_key],
+        img_size=tuple(cfg["img_size"]),
+        to_rgb=True,
+        transform=transform,
+        binarize=bool(cfg.get("binarize", True)),
+        binarize_threshold=int(cfg.get("binarize_threshold", 128)),
+    )
+    if dataset_type == "paired":
+        return PairedDirsSegDataset(
+            **common,
+            pair_mode=params.get("pair_mode", "stem"),
+            mask_prefix=params.get("mask_prefix", ""),
+            mask_suffix=params.get("mask_suffix", ""),
+            recursive=bool(params.get("recursive", False)),
+        )
+    elif dataset_type == "lucchi":
+        return LucchiSegDataset(
+            **common,
+            recursive=bool(params.get("recursive", False)),
+            zfill_width=int(params.get("zfill_width", 4)),
+            image_prefix=params.get("image_prefix", "mask"),
+        )
+    else:
+        raise ValueError(
+            f"Unknown dataset.type '{dataset_type}'. "
+            "Use 'lucchi' or 'paired' and attach details under dataset.params."
+        )
+
 def best_checkpoint(run_dir) -> Path:
     """Return runs/.../checkpoint_best.pt or raise if missing."""
     p = Path(run_dir) / "checkpoint_best.pt"
@@ -170,21 +210,7 @@ def main():
 
     # dataset (test split from cfg)
     t = em_seg_transforms(tuple(cfg["img_size"]))
-    # ds = PairedDirsSegDataset(
-    #     cfg["test_img_dir"], cfg["test_mask_dir"],
-    #     img_size=cfg["img_size"], to_rgb=True, transform=t,
-    #     binarize=bool(cfg.get("binarize", True)),
-    #     binarize_threshold=int(cfg.get("binarize_threshold", 128)),
-    # )
-    ds = LucchiSegDataset(
-        cfg["test_img_dir"], cfg["test_mask_dir"],
-        img_size=cfg["img_size"], to_rgb=True, transform=t,
-        binarize=bool(cfg.get("binarize", True)),
-        binarize_threshold=int(cfg.get("binarize_threshold", 128)),
-        recursive=False,
-        zfill_width=4,
-        image_prefix="mask",
-    )
+    ds = _build_dataset(cfg, split="test", transform=t)
 
     loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=4,
                         pin_memory=(device.type == "cuda"))

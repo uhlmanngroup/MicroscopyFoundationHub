@@ -1,0 +1,53 @@
+# Environment: cluster (UZH Science) — composed DINO-POC dataset
+
+# ---- I/O ----
+train_img_dir: "/home/cfuste/data/datasets/DINO-POC/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/DINO-POC/train/masks"
+test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
+test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
+out_dir: "runs/dinopoc_lora_r16_img560"
+
+# stitched dataset already shares a naming scheme between images/masks
+dataset:
+  type: paired          # use generic PairedDirsSegDataset
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+dino_size: base
+img_size: [560, 560]    # width x height; multiple of 14 keeps ViT patch alignment
+num_classes: 2
+
+# ---- MLflow ----
+mlflow_experiment_name: Lora-Dice-R16-img560-DINOPOC
+
+# ---- LoRA ----
+use_lora: true
+lora_targets: [attn.qkv, attn.proj]
+lora_rank: 16
+lora_alpha: 32
+
+# ---- training ----
+batch_size: 2
+epochs: 80
+lr: 0.00005
+weight_decay: 0.0001
+num_workers: 4
+device: auto
+amp: false
+
+# ---- loss (CE + Tversky on foreground) ----
+loss: dice      # ce, dice, ce_tversky 
+class_weights: [1.0, 15.0]    # bg, fg
+tversky_alpha: 0.7
+tversky_beta: 0.3
+tversky_eps: 1.0e-6
+tversky_weight: 0.6   # lambda: 0.6*Tversky + 0.4*CE
+
+# ---- training safety ----
+clip_grad_norm: 1.0   # global grad clip
+
+# ---- export / viz ----
+binarize: true
+binarize_threshold: 128

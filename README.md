@@ -12,10 +12,10 @@ pip install -e .
 python scripts/compose_em_datasets.py
 
 # 2) train (Mac / local)
-python scripts/train_em_seg.py --cfg config/em_lora_mac.yaml
+python scripts/train_em_seg.py --cfg config/lucchi_lora_mac.yaml
 
-# 3) train (CUDA / cluster)
-python scripts/train_em_seg.py --cfg config/em_lora_cuda.yaml
+# 3) train (CUDA / cluster, Lucchi++)
+python scripts/train_em_seg.py --cfg config/lucchi_lora_cluster.yaml
 ```
 
 ## What's here

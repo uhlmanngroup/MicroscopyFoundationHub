@@ -1,3 +1,5 @@
+# Environment: cluster (legacy scratch staging) — composed DINO-POC dataset
+
 # Composed dataset
 train_img_dir: "/home/cfuste/scratch/datasets/DINO-POC/train/images"
 train_mask_dir: "/home/cfuste/scratch/datasets/DINO-POC/train/masks"

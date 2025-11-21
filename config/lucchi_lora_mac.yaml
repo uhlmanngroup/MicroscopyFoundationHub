@@ -1,3 +1,5 @@
+# Environment: Mac / local dev — Lucchi++ dataset
+
 # Composed dataset (train/test already prepared)
 # train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/images"
 # train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/masks"

@@ -3,11 +3,24 @@ train_img_dir: /home/cfuste/data/datasets/DINO-POC/train/images
 train_mask_dir: /home/cfuste/data/datasets/DINO-POC/train/masks
 val_img_dir:    /home/cfuste/data/datasets/DINO-POC/test/images
 val_mask_dir:   /home/cfuste/data/datasets/DINO-POC/test/masks
-out_dir: runs/exp_baseline_head_only
+
+# results + experiment naming
+experiment_id: "2025-01-01_A1_headonly_dinov2-base_lora-none_seg"
+results_root: "runs"
+task_type: "seg"
 
 # ---- model ----
 dino_size: base
-img_size: [518, 518]
+img_size:
+  mode: longest_edge
+  target: 1022
+  patch_multiple: 14
+  rounding: floor
+dataset:
+  type: paired
+  params:
+    pair_mode: "stem"
+    recursive: false
 num_classes: 2
 
 # ---- LoRA (disabled) ----

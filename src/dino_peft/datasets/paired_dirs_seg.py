@@ -1,8 +1,13 @@
 from pathlib import Path
-from PIL import Image, ImageOps
+from PIL import Image
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
+from dino_peft.utils.image_size import (
+    compute_resized_hw,
+    parse_img_size_config,
+)
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
@@ -43,11 +48,11 @@ class PairedDirsSegDataset(Dataset):
     ):
         self.image_dir = Path(image_dir)
         self.mask_dir  = Path(mask_dir)
-        self.img_size  = tuple(img_size)
-        self.to_rgb    = bool(to_rgb)
         self.transform = transform
+        self.to_rgb    = bool(to_rgb)
         self.binarize  = bool(binarize)
         self.thresh    = int(binarize_threshold)
+        self.resize_spec = parse_img_size_config(img_size)
 
         imgs  = _list_files(self.image_dir, recursive)
         masks = _list_files(self.mask_dir,  recursive)
@@ -117,7 +122,11 @@ class PairedDirsSegDataset(Dataset):
         # Save in name the basename of the image path
         name = ip.stem
         # image
-        img = self._load_rgb(ip).resize(self.img_size, Image.BICUBIC)
+        img = self._load_rgb(ip)
+        target_hw = compute_resized_hw((img.height, img.width), self.resize_spec)
+        target_wh = (target_hw[1], target_hw[0])
+        if img.size != target_wh:
+            img = img.resize(target_wh, Image.BICUBIC)
 
         # --- MASK: force single channel ---
         mask = Image.open(mp)
@@ -134,7 +143,7 @@ class PairedDirsSegDataset(Dataset):
             except Exception:
                 # fallback: take first channel if convert fails (e.g., unusual mode)
                 mask = mask.split()[0]
-        mask = mask.resize(self.img_size, Image.NEAREST)
+        mask = mask.resize(target_wh, Image.NEAREST)
 
         # transforms
         if self.transform:
@@ -152,4 +161,3 @@ class PairedDirsSegDataset(Dataset):
             mask = mask.astype(np.int64)
 
         return img, torch.from_numpy(mask), name
-

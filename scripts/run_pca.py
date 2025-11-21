@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dino_peft.analysis.dimred import load_feature_npz, run_pca, run_umap
 from dino_peft.utils.plots import scatter_2d
+from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
 
 def load_cfg(path: Path):
     with open(path, "r") as f:
@@ -23,12 +24,28 @@ def main():
     data_cfg = cfg.get("data", {})
     pca_cfg = cfg.get("pca", {})
 
-    input_path = Path(data_cfg["input_path"])
-    output_dir = Path(data_cfg["output_path"])
-    output_dir.mkdir(parents=True, exist_ok=True)
+    input_path = Path(data_cfg["input_path"]).expanduser()
+    run_dir = None
+    task_type = cfg.get("task_type", "feats")
+    if "experiment_id" in cfg and "results_root" in cfg:
+        run_dir = setup_run_dir(cfg, task_type=task_type, subdirs=("plots",))
+        plots_dir = run_dir / "plots"
+        write_run_info(
+            run_dir,
+            {
+                "task_type": task_type,
+                "input_features": input_path,
+                "n_components": int(pca_cfg.get("n_components", 2)),
+            },
+        )
+    else:
+        output_dir = Path(data_cfg.get("output_path", ".")).expanduser()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plots_dir = output_dir
+
     stem = input_path.stem
-    pca_out = output_dir / f"{stem}_pca.png"
-    umap_out = output_dir / f"{stem}_umap.png"
+    pca_out = plots_dir / f"{stem}_pca.png"
+    umap_out = plots_dir / f"{stem}_umap.png"
 
     # PCA config
     n_components = int(pca_cfg.get("n_components", 2))
@@ -116,6 +133,18 @@ def main():
             title=title_umap,
         )
         print(f"Saved UMAP scatter to {umap_out}")
+
+    if run_dir is not None:
+        update_metrics(
+            run_dir,
+            "pca",
+            {
+                "pca_components": int(n_components),
+                "pca_plot_dims": list(plot_dims),
+                "umap_enabled": bool(umap_enabled),
+                "input_features": str(input_path),
+            },
+        )
 
 
 if __name__ == "__main__":

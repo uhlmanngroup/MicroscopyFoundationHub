@@ -1,9 +1,10 @@
+experiment_id: "2025-01-01_A5_lucchi+droso_dinov2-base_lora-none_feats"
+results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
+task_type: "feats"
+
 data:
   # Folder with all your mixed images (lucchi-*.png, droso-stack*.tif, etc.)
   data_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft-unsupervised"
-
-  # Where to save the .npz (can be relative to repo root)
-  output_path: "/Users/cfuste/Documents/Results/DINO-LoRA/features/lucchi_droso_dinov2-base_zero-shot.npz"
 
 model:
   # One of: small, base, large, giant
@@ -13,7 +14,11 @@ runtime:
   # On the Mac, keep it small-ish and CPU-friendly
   batch_size: 8
   num_workers: 2
-  img_size: 518
+  img_size:
+    mode: longest_edge
+    target: 1022
+    patch_multiple: 14
+    rounding: floor
 
   # "auto" = use cuda if available else cpu. You can also force "cpu" or "cuda".
   device: "auto"

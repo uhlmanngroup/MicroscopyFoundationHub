@@ -1,5 +1,8 @@
 from torchvision import transforms as T
 import torch 
+from PIL import Image
+
+from .image_size import compute_resized_hw, parse_img_size_config
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
@@ -24,18 +27,26 @@ def denorm_imagenet(x: torch.Tensor) -> torch.Tensor:
     std  = x.new_tensor(IMAGENET_STD).view(1, 3, 1, 1)
     return x * std + mean
 
-def em_dino_unsup_transforms(img_size: int = 518):
+def em_dino_unsup_transforms(img_size: int | dict | tuple = 518):
     """
     Eval-time transform for DINO unsupervised analysis:
-    - Resize to (img_size, img_size) (must be multiple of patch size=14)
+    - Resize with aspect ratio preserved if img_size is int/dict
     - ToTensor
     - ImageNet normalization
     """
-    if img_size % 14 != 0:
-        raise ValueError(f"img_size must be a multiple of 14 for DINO, got {img_size}")
+    resize_spec = parse_img_size_config(img_size)
 
-    return T.Compose([
-        T.Resize((img_size, img_size)),
-        T.ToTensor(),
-        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-    ])
+    def _resize(image: Image.Image) -> Image.Image:
+        target_hw = compute_resized_hw((image.height, image.width), resize_spec)
+        target_wh = (target_hw[1], target_hw[0])
+        if image.size != target_wh:
+            return image.resize(target_wh, Image.BICUBIC)
+        return image
+
+    return T.Compose(
+        [
+            T.Lambda(_resize),
+            T.ToTensor(),
+            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ]
+    )

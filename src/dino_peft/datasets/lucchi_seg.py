@@ -1,13 +1,10 @@
 # src/dino_peft/datasets/lucchi_seg.py
 from pathlib import Path
-from typing import Iterable, Tuple
-import numpy as np
-import torch
-from torch.utils.data import Dataset
-from PIL import Image
+from typing import Tuple
 
 # Reuse the robust I/O and tensor logic from your generic dataset
 from .paired_dirs_seg import PairedDirsSegDataset
+from dino_peft.utils.image_size import parse_img_size_config
 
 def _list_images(root: Path, recursive: bool) -> list[Path]:
     pats = ("*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.bmp")
@@ -50,11 +47,11 @@ class LucchiSegDataset(PairedDirsSegDataset):
         # Instead, we set the attributes it expects, then reuse its __getitem__ / _load_rgb.
         self.image_dir = Path(image_dir)
         self.mask_dir  = Path(mask_dir)
-        self.img_size  = tuple(img_size)
         self.to_rgb    = bool(to_rgb)
         self.transform = transform
         self.binarize  = bool(binarize)
         self.thresh    = int(binarize_threshold)
+        self.resize_spec = parse_img_size_config(img_size)
 
         imgs  = _list_images(self.image_dir, recursive)
         masks = _list_images(self.mask_dir,  recursive)

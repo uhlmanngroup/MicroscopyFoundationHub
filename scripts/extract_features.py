@@ -1,33 +1,38 @@
-# scripts/extract_features.py
-# Script to extract features from images in a folder using DINOv2 and save them to a .npz file.
+"""Extract unsupervised DINO features and save them in the run directory layout."""
 
+from __future__ import annotations
+
+import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 import yaml
-import sys
 
 from dino_peft.analysis.feature_extractor import extract_features_from_folder
+from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
 
 DEFAULT_CFG_PATH = Path(__file__).parent.parent / "config" / "em_unsupervised_features_mac.yaml"
+
+
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Extract DINO features for EM datasets.")
+    ap.add_argument("--cfg", type=str, default=str(DEFAULT_CFG_PATH), help="Path to YAML config.")
+    return ap.parse_args()
+
 
 def load_config(cfg_path: Path) -> dict:
     if not cfg_path.is_file():
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
     with cfg_path.open("r") as f:
         cfg = yaml.safe_load(f)
-    if cfg is None:
+    if not cfg:
         raise ValueError(f"Config file {cfg_path} is empty or invalid.")
     return cfg
 
-def resolve_device(device_str: str) -> str:
-    """
-    Resolve device string into one of: 'cuda', 'mps', 'cpu'.
 
-    - 'auto': prefer CUDA if available, then MPS (Apple Silicon), else CPU.
-    - 'cuda' / 'mps' / 'cpu': force that device, with a sanity check.
-    """
+def resolve_device(device_str: str) -> str:
     device_str = device_str.lower()
 
     if device_str == "auto":
@@ -52,52 +57,68 @@ def resolve_device(device_str: str) -> str:
 
     raise ValueError(f"Invalid device '{device_str}', expected 'auto', 'cpu', 'cuda', or 'mps'.")
 
+
 def main() -> None:
-    cfg_path = DEFAULT_CFG_PATH
+    args = parse_args()
+    cfg_path = Path(args.cfg)
     print(f"[extract_features] Using config file: {cfg_path}")
 
     cfg = load_config(cfg_path)
-
     data_cfg = cfg.get("data", {})
     model_cfg = cfg.get("model", {})
     runtime_cfg = cfg.get("runtime", {})
-    img_size = int(runtime_cfg.get("img_size", 518))
 
-
+    img_size_cfg = runtime_cfg.get("img_size", 518)
     data_dir = data_cfg.get("data_dir")
-    output_path = data_cfg.get("output_path")
-
-    if data_dir is None or output_path is None:
-        raise ValueError(
-            "Config must define data.data_dir and data.output_path.\n"
-            f"Got data section: {data_cfg}"
-        )
+    if data_dir is None:
+        raise ValueError("Config must define data.data_dir.")
 
     dino_size = model_cfg.get("dino_size", "base")
-
     batch_size = int(runtime_cfg.get("batch_size", 16))
     num_workers = int(runtime_cfg.get("num_workers", 4))
-    device_str = runtime_cfg.get("device", "auto")
-    device = resolve_device(device_str)
+    device = resolve_device(runtime_cfg.get("device", "auto"))
+
+    run_dir = None
+    out_path: Path
+    task_type = cfg.get("task_type", "feats")
+    if "experiment_id" in cfg and "results_root" in cfg:
+        run_dir = setup_run_dir(cfg, task_type=task_type, subdirs=("plots",))
+        out_path = run_dir / "features.npz"
+        write_run_info(
+            run_dir,
+            {
+                "task_type": task_type,
+                "device": device,
+                "img_size": img_size_cfg,
+                "dino_size": dino_size,
+                "data_dir": data_dir,
+            },
+        )
+    else:
+        output_path = data_cfg.get("output_path")
+        if output_path is None:
+            raise ValueError(
+                "Config must define results_root/experiment_id or legacy data.output_path."
+            )
+        out_path = Path(output_path).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"[extract_features] data_dir   = {data_dir}")
-    print(f"[extract_features] output     = {output_path}")
+    print(f"[extract_features] output     = {out_path}")
     print(f"[extract_features] dino_size  = {dino_size}")
     print(f"[extract_features] batch_size = {batch_size}")
     print(f"[extract_features] num_workers= {num_workers}")
     print(f"[extract_features] device     = {device}")
+    print(f"[extract_features] img_size   = {img_size_cfg}")
 
     features_dict = extract_features_from_folder(
         data_dir=data_dir,
         dino_size=dino_size,
-        img_size=img_size,
+        img_size=img_size_cfg,
         batch_size=batch_size,
         num_workers=num_workers,
         device=device,
     )
-
-    out_path = Path(output_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Ensure everything is NumPy / Python-native before saving
     to_save = {}
@@ -115,6 +136,18 @@ def main() -> None:
         f"(N={feats.shape[0]}, dim={feats.shape[1]})"
     )
     print(f"[extract_features] Keys: {list(features_dict.keys())}")
+
+    if run_dir is not None:
+        update_metrics(
+            run_dir,
+            "features",
+            {
+                "num_samples": int(feats.shape[0]),
+                "feature_dim": int(feats.shape[1]),
+                "dino_size": dino_size,
+                "data_dir": data_dir,
+            },
+        )
 
 
 if __name__ == "__main__":

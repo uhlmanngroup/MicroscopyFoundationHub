@@ -17,6 +17,7 @@ from dino_peft.utils.plots import save_triptych_grid
 from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
 from dino_peft.models.lora import inject_lora, lora_parameters
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
+from dino_peft.utils.paths import setup_run_dir, write_run_info, update_metrics
 
 
 def pick_device(cfg_device: str | None):
@@ -90,10 +91,61 @@ class SegTrainer:
         self.device = pick_device(self.cfg.get("device", "auto"))
         print(">> Using device:", self.device)
 
-        self.out_dir = Path(self.cfg["out_dir"])
-        self.out_dir.mkdir(parents=True, exist_ok=True)
+        task_type = self.cfg.get("task_type", "seg")
+        self.out_dir = setup_run_dir(
+            self.cfg,
+            task_type=task_type,
+            subdirs=("logs", "ckpts", "figs", "figs/previews"),
+        )
+        self.ckpt_dir = self.out_dir / "ckpts"
+        self.fig_dir = self.out_dir / "figs"
+        self.previews_dir = self.fig_dir / "previews"
+        write_run_info(
+            self.out_dir,
+            {
+                "task_type": task_type,
+                "device": str(self.device),
+                "img_size": self.cfg.get("img_size"),
+                "dino_size": self.cfg.get("dino_size"),
+            },
+        )
+
+        # -------- dataset selection ----------
+        dataset_cfg = self.cfg.get("dataset", {})
+        dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
+        dataset_params = dict(dataset_cfg.get("params", {}))
+        dataset_map = {
+            "lucchi": LucchiSegDataset,
+            "paired": PairedDirsSegDataset,
+        }
+        DatasetClass = dataset_map.get(dataset_type)
+        if DatasetClass is None:
+            raise ValueError(
+                f"Unsupported dataset.type '{dataset_type}'. "
+                "Use 'lucchi' or 'paired'."
+            )
+        if dataset_type == "lucchi":
+            dataset_params.setdefault("recursive", False)
+            dataset_params.setdefault("zfill_width", 4)
+            dataset_params.setdefault("image_prefix", "mask")
+
+        def _build_dataset(img_dir, mask_dir, transform):
+            kwargs = {
+                "img_size": self.cfg["img_size"],
+                "to_rgb": True,
+                "transform": transform,
+                "binarize": bool(self.cfg.get("binarize", True)),
+                "binarize_threshold": int(self.cfg.get("binarize_threshold", 128)),
+            }
+            kwargs.update(dataset_params)
+            return DatasetClass(
+                img_dir,
+                mask_dir,
+                **kwargs,
+            )
 
         # -------- transforms ----------
+<<<<<<< HEAD
         img_size = tuple(self.cfg["img_size"])
         t_train = em_seg_transforms(img_size)   # your current (deterministic) pipeline
         t_val   = em_seg_transforms(img_size)   # simplest: no transform in val
@@ -135,6 +187,17 @@ class SegTrainer:
 
         # -------- base dataset (NO transform) ----------
         base_ds = _build_dataset(transform=None)
+=======
+        t_train = em_seg_transforms()   # deterministic pipeline (resize handled in dataset)
+        t_val   = em_seg_transforms()
+
+        # -------- base dataset (NO transform) ----------
+        base_ds = _build_dataset(
+            self.cfg["train_img_dir"],
+            self.cfg["train_mask_dir"],
+            transform=None,
+        )
+>>>>>>> ccd17a6b25ae6689aedfc5669d66e628084095fd
 
         # -------- 10% validation split ----------
         val_ratio = float(self.cfg.get("val_ratio", 0.1))
@@ -146,7 +209,15 @@ class SegTrainer:
         train_idx, val_idx = perm[:n_train], perm[n_train:]
 
         def make_subset_dataset(src_ds, index_list, transform):
+<<<<<<< HEAD
             ds = _build_dataset(transform=transform)
+=======
+            ds = _build_dataset(
+                self.cfg["train_img_dir"],
+                self.cfg["train_mask_dir"],
+                transform=transform,
+            )
+>>>>>>> ccd17a6b25ae6689aedfc5669d66e628084095fd
             ds.pairs = [src_ds.pairs[i] for i in index_list]
             return ds
 
@@ -162,6 +233,7 @@ class SegTrainer:
             shuffle=True,
             num_workers=self.cfg["num_workers"],
             pin_memory=pin,
+            collate_fn=self._pad_collate,
         )
         self.val_loader = DataLoader(
             self.val_ds,
@@ -169,6 +241,7 @@ class SegTrainer:
             shuffle=False,
             num_workers=self.cfg["num_workers"],
             pin_memory=pin,
+            collate_fn=self._pad_collate,
         )
 
         # -------- model ----------
@@ -221,11 +294,31 @@ class SegTrainer:
             self.autocast = lambda: autocast(device_type="cpu", enabled=False)
 
         # -------- save config & lora list ----------
-        with open(self.out_dir / "config_used.yaml", "w") as f:
-            yaml.safe_dump(self.cfg, f)
         with open(self.out_dir / "lora_layers.txt", "w") as f:
             for n in self.lora_names:
                 f.write(n + "\n")
+
+    @staticmethod
+    def _pad_collate(batch):
+        imgs, masks, names = zip(*batch)
+        max_h = max(img.shape[-2] for img in imgs)
+        max_w = max(img.shape[-1] for img in imgs)
+        padded_imgs = []
+        padded_masks = []
+        for img, mask in zip(imgs, masks):
+            c = img.shape[0]
+            h, w = img.shape[-2], img.shape[-1]
+            pad_img = img.new_zeros((c, max_h, max_w))
+            pad_img[:, :h, :w] = img
+            padded_imgs.append(pad_img)
+
+            mh, mw = mask.shape[-2], mask.shape[-1]
+            pad_mask = mask.new_full((max_h, max_w), 0)
+            pad_mask[:mh, :mw] = mask
+            padded_masks.append(pad_mask)
+        imgs_tensor = torch.stack(padded_imgs)
+        masks_tensor = torch.stack(padded_masks)
+        return imgs_tensor, masks_tensor, list(names)
 
     # ---------- MLflow helpers ----------
     def _resolve_mlflow_tracking(self):
@@ -243,12 +336,24 @@ class SegTrainer:
 
     def train(self):
         best_val = float('inf')
-        best_path = self.out_dir / "checkpoint_best.pt"
-        last_path = self.out_dir / "checkpoint_last.pt"
+        best_epoch = 0
+        val_loss = float('inf')
+        avg_train = float('inf')
+        best_path = self.ckpt_dir / "best_model.pt"
+        last_path = self.ckpt_dir / "last_model.pt"
 
         tracking_uri, exp_name = self._resolve_mlflow_tracking()
 
-        run_name = f"{self.cfg.get('dino_size','?')}_img{self.cfg['img_size'][0]}_{'lora' if self.cfg.get('use_lora',True) else 'head'}"
+        img_tag = self.cfg.get("img_size")
+        if isinstance(img_tag, (list, tuple)) and img_tag:
+            img_tag_str = f"{img_tag[0]}x{img_tag[1]}" if len(img_tag) > 1 else str(img_tag[0])
+        elif isinstance(img_tag, dict):
+            tgt = img_tag.get("target") or img_tag.get("target_long_edge")
+            mode = img_tag.get("mode", "var")
+            img_tag_str = f"{mode}-{tgt}" if tgt else mode
+        else:
+            img_tag_str = str(img_tag)
+        run_name = f"{self.cfg.get('dino_size','?')}_img{img_tag_str}_{'lora' if self.cfg.get('use_lora',True) else 'head'}"
 
         # === Everything MLflow happens here ===
         mlflow.set_experiment(self.cfg.get("mlflow_experiment_name", "default")) 
@@ -344,7 +449,7 @@ class SegTrainer:
 
                         if i == 0:
                             # ---- Save a labeled triptych (first batch only) ----
-                            grid_dir = self.out_dir / "previews"
+                            grid_dir = self.previews_dir
                             grid_dir.mkdir(parents=True, exist_ok=True)
 
                             # Show up to K samples
@@ -413,6 +518,7 @@ class SegTrainer:
 
                 if val_loss < best_val:
                     best_val = float(val_loss)
+                    best_epoch = epoch
                     torch.save(ckpt, best_path)
                     print(f"[ckpt] NEW BEST -> {best_path.name} (val_loss={best_val:.4f})")
                     mlflow.log_metric("val/best_loss", best_val, step=epoch)
@@ -420,7 +526,7 @@ class SegTrainer:
                 # upload previews periodically
                 try:
                     if epoch % 5 == 0:
-                        mlflow.log_artifacts(str(self.out_dir / "previews"), artifact_path="previews")
+                        mlflow.log_artifacts(str(self.previews_dir), artifact_path="previews")
                 except Exception as e:
                     print("[mlflow] preview artifact upload skipped:", e)
 
@@ -430,3 +536,15 @@ class SegTrainer:
             except Exception as e:
                 print("[mlflow] final artifact upload skipped:", e)
         # context manager will end the run for us
+        update_metrics(
+            self.out_dir,
+            "train",
+            {
+                "best_val_loss": float(best_val),
+                "best_epoch": int(best_epoch),
+                "final_val_loss": float(val_loss),
+                "final_train_loss": float(avg_train),
+                "epochs": int(self.epochs),
+                "seed": int(self.seed),
+            },
+        )

@@ -10,8 +10,22 @@ num_classes: 2
 binarize: true
 binarize_threshold: 128
 
+# results + experiment naming
+experiment_id: "2025-01-01_A1_composed_dinov2-base_lora-r8_seg"
+results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
+task_type: "seg"
+
 # larger / faster on GPUs
-img_size: [392, 392]     # 22×22 tokens (14×22 = 308)
+img_size:
+  mode: longest_edge
+  target: 1022
+  patch_multiple: 14
+  rounding: floor
+dataset:
+  type: paired
+  params:
+    pair_mode: "stem"
+    recursive: false
 batch_size: 8
 num_workers: 8
 
@@ -32,5 +46,4 @@ lr: 1.0e-4
 weight_decay: 1.0e-4
 save_every: 5
 
-# outputs
-out_dir: "/Users/cfuste/Documents/Results/DINO-PEFT/composed_cuda_vitb14_lora"
+# outputs handled via results_root/experiment_id

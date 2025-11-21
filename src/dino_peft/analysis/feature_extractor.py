@@ -2,6 +2,7 @@
 # Python file for extracting features from images using DINOv2 backbone model.
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
 def extract_features_from_folder(
     data_dir: str | Path,
     dino_size: str = "base",
-    img_size: int = 518, 
+    img_size: int | dict | tuple = 518,
     batch_size: int = 16,
     num_workers: int = 4,
     device: str = "cuda",
@@ -49,12 +50,25 @@ def extract_features_from_folder(
     # Data loader using transforms for EM segmentation
     transform = em_dino_unsup_transforms(img_size=img_size)
     dataset = FlatImageFolder(root_dir=data_dir, transform=transform)
+
+    def pad_collate(batch):
+        images, paths = zip(*batch)
+        max_h = max(img.shape[1] for img in images)
+        max_w = max(img.shape[2] for img in images)
+        padded = []
+        for img in images:
+            pad_h = max_h - img.shape[1]
+            pad_w = max_w - img.shape[2]
+            padded.append(F.pad(img, (0, pad_w, 0, pad_h)))
+        return torch.stack(padded, dim=0), list(paths)
+
     loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=device.startswith("cuda"),
+        collate_fn=pad_collate,
     )
 
     all_features = []
@@ -68,7 +82,6 @@ def extract_features_from_folder(
         feats_np = features.cpu().numpy().astype("float32")
         all_features.append(feats_np)
         all_paths.extend(paths)
-        
         # Infer dataset name from filename prefix
         for p in paths:
             name = Path(p).name
@@ -78,16 +91,6 @@ def extract_features_from_folder(
                 all_dataset_names.append("droso")
             else:
                 raise ValueError(f"Cannot infer dataset name from filename '{name}'")
-            
-        # Map dataset names to IDs
-        unique_names = sorted(set(all_dataset_names))
-        name_to_id = {name: idx for idx, name in enumerate(unique_names)}
-        dataset_ids = np.array([name_to_id[n] for n in all_dataset_names], dtype=np.int32)
-
-        # Store mapping as "name:id" strings for easy reconstruction later
-        dataset_name_to_id = np.array(
-            [f"{name}:{idx}" for name, idx in name_to_id.items()], dtype=object
-        )  
 
     features_np = np.concatenate(all_features, axis=0)  # (N, C)
     unique_names = sorted(set(all_dataset_names))

@@ -18,6 +18,43 @@ python scripts/train_em_seg.py --cfg config/lucchi_lora_mac.yaml
 python scripts/train_em_seg.py --cfg config/lucchi_lora_cluster.yaml
 ```
 
+## Results Layout & Experiment IDs
+
+All training, evaluation, and feature/analysis scripts share a single results layout driven by the YAML config. Each config must define:
+
+- `experiment_id`: follow `YYYY-MM-DD_SUBTASK_DATASETS_BACKBONE_LORA_TASK` (e.g. `2025-11-20_A1_lucchi+droso_dinov2-base_lora-none_seg`). Update this string before every new run so directories and config copies stay unique.
+- `results_root`: the absolute (or `~`-expanded) directory where you keep all run outputs, e.g. `/Users/cfuste/Documents/Results/DINO-LoRA`.
+- `task_type`: `"seg"` for segmentation training/eval (`train_em_seg.py`, `eval_em_seg.py`) and `"feats"` for feature extraction/PCA/latent scripts (`extract_features.py`, `run_pca.py`, future FID/LR scripts).
+
+When one of the scripts starts, it creates `<results_root>/<task_type>/<experiment_id>/` and saves:
+
+```
+seg/
+  <RunID>/
+    config_used.yaml      # exact config snapshot
+    run_info.txt          # timestamp, git hash, device, img size…
+    metrics.json          # sections: train, eval
+    logs/
+    ckpts/best_model.pt, last_model.pt
+    figs/previews/, figs/eval_previews/
+
+feats/
+  <RunID>/
+    config_used.yaml
+    run_info.txt
+    metrics.json          # sections: features, pca, etc.
+    features.npz          # feature extractor output
+    plots/*.png           # PCA / UMAP or other analysis figures
+```
+
+`metrics.json` is automatically updated per phase: training adds best-val stats, `eval_em_seg.py` appends Lucchi/Droso IoU/Dice summaries, `extract_features.py` records feature dimensionality, and `run_pca.py` records PCA/UMAP configuration. All scripts keep writing MLflow artifacts as before.
+
+To launch a new experiment:
+
+1. Pick/clone the most relevant YAML under `config/`.
+2. Edit the dataset paths as usual, then set a fresh `experiment_id`, ensure `results_root` points to your preferred root folder, and set `task_type` (`"seg"` or `"feats"`).
+3. Run the desired script. Outputs, checkpoints, configs, and plots will land under the corresponding run directory so you can diff or archive them safely.
+
 ## What's here
 * **Backbone**: DINOv2 ViT (`vits14`/`vitb14` etc.) via `torch.hub`.
 * **PEFT**: LoRA injected into attention `qkv` and `proj` linear layers; backbone params frozen; only LoRA + segmentation head train.

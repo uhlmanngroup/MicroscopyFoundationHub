@@ -144,50 +144,6 @@ class SegTrainer:
                 **kwargs,
             )
 
-        # -------- transforms ----------
-<<<<<<< HEAD
-        img_size = tuple(self.cfg["img_size"])
-        t_train = em_seg_transforms(img_size)   # your current (deterministic) pipeline
-        t_val   = em_seg_transforms(img_size)   # simplest: no transform in val
-
-        dataset_cfg = self.cfg.get("dataset", {})
-        dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
-        dataset_params = dataset_cfg.get("params") or {}
-
-        def _build_dataset(transform):
-            common = dict(
-                image_dir=self.cfg["train_img_dir"],
-                mask_dir=self.cfg["train_mask_dir"],
-                img_size=img_size,
-                to_rgb=True,
-                transform=transform,
-                binarize=bool(self.cfg.get("binarize", True)),
-                binarize_threshold=int(self.cfg.get("binarize_threshold", 128)),
-            )
-            if dataset_type == "paired":
-                return PairedDirsSegDataset(
-                    **common,
-                    pair_mode=dataset_params.get("pair_mode", "stem"),
-                    mask_prefix=dataset_params.get("mask_prefix", ""),
-                    mask_suffix=dataset_params.get("mask_suffix", ""),
-                    recursive=bool(dataset_params.get("recursive", False)),
-                )
-            elif dataset_type == "lucchi":
-                return LucchiSegDataset(
-                    **common,
-                    recursive=bool(dataset_params.get("recursive", False)),
-                    zfill_width=int(dataset_params.get("zfill_width", 4)),
-                    image_prefix=dataset_params.get("image_prefix", "mask"),
-                )
-            else:
-                raise ValueError(
-                    f"Unknown dataset.type '{dataset_type}'. "
-                    "Use 'lucchi' or 'paired' and pass extra args via dataset.params."
-                )
-
-        # -------- base dataset (NO transform) ----------
-        base_ds = _build_dataset(transform=None)
-=======
         t_train = em_seg_transforms()   # deterministic pipeline (resize handled in dataset)
         t_val   = em_seg_transforms()
 
@@ -197,7 +153,6 @@ class SegTrainer:
             self.cfg["train_mask_dir"],
             transform=None,
         )
->>>>>>> ccd17a6b25ae6689aedfc5669d66e628084095fd
 
         # -------- 10% validation split ----------
         val_ratio = float(self.cfg.get("val_ratio", 0.1))
@@ -209,15 +164,11 @@ class SegTrainer:
         train_idx, val_idx = perm[:n_train], perm[n_train:]
 
         def make_subset_dataset(src_ds, index_list, transform):
-<<<<<<< HEAD
-            ds = _build_dataset(transform=transform)
-=======
             ds = _build_dataset(
                 self.cfg["train_img_dir"],
                 self.cfg["train_mask_dir"],
                 transform=transform,
             )
->>>>>>> ccd17a6b25ae6689aedfc5669d66e628084095fd
             ds.pairs = [src_ds.pairs[i] for i in index_list]
             return ds
 
@@ -276,6 +227,7 @@ class SegTrainer:
         print("[warn] unexpected trainable in backbone:", [n for n,p in self.backbone.named_parameters() if p.requires_grad and "lora_" not in n][:15])
         self.criterion = build_criterion(self.cfg, device=self.device)
         self.epochs = int(self.cfg["epochs"])
+        self.patience = max(1, int(self.cfg.get("patience", 20)))
         self.clip_grad_norm = float(self.cfg.get("clip_grad_norm", 0.0))
 
         # -------- AMP ----------
@@ -374,6 +326,7 @@ class SegTrainer:
             mlflow.log_param("lora_alpha",int(self.cfg.get("lora_alpha", 0)))
             mlflow.log_param("batch_size",int(self.cfg.get("batch_size")))
             mlflow.log_param("epochs",    int(self.cfg.get("epochs")))
+            mlflow.log_param("patience",  int(self.patience))
             mlflow.log_param("lr",        float(self.cfg.get("lr")))
             mlflow.log_param("weight_decay", float(self.cfg.get("weight_decay")))
             mlflow.log_param("loss", self.cfg.get("loss","ce"))
@@ -398,6 +351,11 @@ class SegTrainer:
             mlflow.log_artifact(str(tmp_note), artifact_path="notes")
 
             # --------- training loop ----------
+            epochs_since_improve = 0
+            epochs_completed = 0
+            best_train_loss = float("inf")
+            last_train_loss = float("inf")
+            last_val_loss = float("inf")
             for epoch in range(1, self.epochs + 1):
                 self.backbone.train(False)
                 self.head.train(True)
@@ -491,6 +449,9 @@ class SegTrainer:
                             )
 
                 val_loss /= max(1, len(self.val_loader))
+                last_train_loss = float(avg_train)
+                last_val_loss = float(val_loss)
+                epochs_completed = epoch
                 print(f"[epoch {epoch}/{self.epochs}] train_loss={avg_train:.4f}  val_loss={val_loss:.4f}")
 
                 # MLflow scalars
@@ -519,9 +480,13 @@ class SegTrainer:
                 if val_loss < best_val:
                     best_val = float(val_loss)
                     best_epoch = epoch
+                    best_train_loss = float(avg_train)
+                    epochs_since_improve = 0
                     torch.save(ckpt, best_path)
                     print(f"[ckpt] NEW BEST -> {best_path.name} (val_loss={best_val:.4f})")
                     mlflow.log_metric("val/best_loss", best_val, step=epoch)
+                else:
+                    epochs_since_improve += 1
 
                 # upload previews periodically
                 try:
@@ -529,6 +494,14 @@ class SegTrainer:
                         mlflow.log_artifacts(str(self.previews_dir), artifact_path="previews")
                 except Exception as e:
                     print("[mlflow] preview artifact upload skipped:", e)
+
+                if epochs_since_improve >= self.patience:
+                    print(f"[early_stop] no val improvement for {self.patience} epochs — stopping at epoch {epoch}")
+                    try:
+                        mlflow.log_metric("train/early_stop_epoch", epoch, step=epoch)
+                    except Exception as e:
+                        print("[mlflow] early stop metric logging skipped:", e)
+                    break
 
             # end-of-run artifacts
             try:
@@ -542,9 +515,12 @@ class SegTrainer:
             {
                 "best_val_loss": float(best_val),
                 "best_epoch": int(best_epoch),
-                "final_val_loss": float(val_loss),
-                "final_train_loss": float(avg_train),
-                "epochs": int(self.epochs),
+                "best_train_loss": float(best_train_loss),
+                "last_val_loss": float(last_val_loss),
+                "last_train_loss": float(last_train_loss),
+                "last_epoch": int(epochs_completed),
+                "max_epochs": int(self.epochs),
+                "patience": int(self.patience),
                 "seed": int(self.seed),
             },
         )

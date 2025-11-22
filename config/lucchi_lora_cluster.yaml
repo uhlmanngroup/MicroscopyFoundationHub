@@ -5,14 +5,16 @@
 # train_mask_dir: /home/cfuste/data/datasets/DINO-POC/train/masks
 # test_img_dir:    /home/cfuste/data/datasets/DINO-POC/test/images
 # test_mask_dir:   /home/cfuste/data/datasets/DINO-POC/test/masks
-# out_dir: runs/lora_dice_r16_img518
-
 # only Lucchi++
 train_img_dir: "/home/cfuste/data/datasets/Lucchi++/Train_In"
 train_mask_dir: "/home/cfuste/data/datasets/Lucchi++/Train_Out"
 test_img_dir:    "/home/cfuste/data/datasets/Lucchi++/Test_In"
 test_mask_dir:   "/home/cfuste/data/datasets/Lucchi++/Test_Out"
-out_dir: "runs/lora_dice_r16_img770x1036_ONLYlucchi"
+
+# results + experiment naming (stored under /data to persist on the cluster)
+experiment_id: "2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg"
+results_root: "/home/cfuste/data/DINO-LoRA"
+task_type: "seg"
 
 # dataset pairing (Lucchi images are named maskXXXX vs masks as digits)
 dataset:
@@ -39,6 +41,7 @@ lora_alpha: 32
 # ---- training ----
 batch_size: 1          # tightened for low-memory smoke tests on standard GPUs
 epochs: 100
+patience: 20
 lr: 0.00005
 weight_decay: 0.0001
 num_workers: 0

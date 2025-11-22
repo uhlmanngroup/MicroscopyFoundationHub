@@ -31,6 +31,23 @@ NUM_WORKERS=${NUM_WORKERS:-2}
 AMP=${AMP:-false}
 RUN_TAG=${RUN_TAG:-lucchi${SLURM_JOB_ID:-manual}}
 
+archive_slurm_log() {
+  local dest_dir="$1" tag="$2"
+  local array_suffix=""
+  if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
+    array_suffix="_${SLURM_ARRAY_TASK_ID}"
+  fi
+  local src="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}${array_suffix}.out"
+  if [ -f "$src" ]; then
+    local dest="${dest_dir}/logs/${tag}_slurm.out"
+    mkdir -p "$(dirname "$dest")"
+    cp "$src" "$dest"
+    echo "[log] archived slurm log → $dest"
+  else
+    echo "[log] slurm output not found at $src" >&2
+  fi
+}
+
 prepare_cfg() {
   local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" tag="$7"
   "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$tag" <<'PY'
@@ -43,7 +60,13 @@ cfg["batch_size"] = max(1, int(batch))
 cfg["num_workers"] = max(0, int(workers))
 cfg["amp"] = amp.lower() not in ("0","false","no","off")
 tag = tag or "lucchi"
-out_dir = pathlib.Path(cfg["out_dir"]).expanduser() / tag
+task_type = cfg.get("task_type", "seg")
+default_out = pathlib.Path(cfg.get("out_dir", "runs/exp")).expanduser()
+base_exp = cfg.get("experiment_id") or default_out.name
+cfg["experiment_id"] = f"{base_exp}_{tag}"
+root = pathlib.Path(cfg.get("results_root", default_out.parent)).expanduser()
+cfg["results_root"] = str(root)
+out_dir = root / task_type / cfg["experiment_id"]
 cfg["out_dir"] = str(out_dir)
 ml_name = cfg.get("mlflow_experiment_name", "lucchi-run")
 cfg["mlflow_experiment_name"] = f"{ml_name}_{tag}"
@@ -64,3 +87,5 @@ trap 'rm -f "$RUNTIME_CFG"' EXIT
 
 "$PY" scripts/train_em_seg.py --cfg "$RUNTIME_CFG"
 "$PY" scripts/eval_em_seg.py --cfg "$RUNTIME_CFG" --out_csv "$RUN_DIR/${RUN_TAG}_metrics.csv"
+
+archive_slurm_log "$RUN_DIR" "$RUN_TAG"

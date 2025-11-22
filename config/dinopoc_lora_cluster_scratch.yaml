@@ -42,6 +42,7 @@ amp: true                # mixed precision on CUDA
 
 # training
 epochs: 40
+patience: 20
 lr: 1.0e-4
 weight_decay: 1.0e-4
 save_every: 5

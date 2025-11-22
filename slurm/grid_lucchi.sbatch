@@ -30,6 +30,32 @@ BATCH_DEFAULT=${BATCH_DEFAULT:-2}
 NUM_WORKERS=${NUM_WORKERS:-4}
 AMP=${AMP:-false}
 RUN_TAG=${RUN_TAG:-lucchigrid${SLURM_JOB_ID:-manual}}
+REPEATS=${REPEATS:-5}
+
+read -r -a SIZE_LIST <<< "$DINO_SIZES"
+NUM_SIZES=${#SIZE_LIST[@]}
+if (( NUM_SIZES == 0 )); then
+  echo "[error] DINO_SIZES is empty" >&2
+  exit 1
+fi
+TOTAL_TASKS=$(( NUM_SIZES * REPEATS ))
+
+archive_slurm_log() {
+  local dest_dir="$1" tag="$2"
+  local array_suffix=""
+  if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
+    array_suffix="_${SLURM_ARRAY_TASK_ID}"
+  fi
+  local src="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}${array_suffix}.out"
+  if [ -f "$src" ]; then
+    local dest="${dest_dir}/logs/${tag}_slurm.out"
+    mkdir -p "$(dirname "$dest")"
+    cp "$src" "$dest"
+    echo "[log] archived slurm log → $dest"
+  else
+    echo "[log] slurm output not found at $src" >&2
+  fi
+}
 
 prepare_cfg() {
   local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" tag="$7"
@@ -43,7 +69,13 @@ cfg["batch_size"] = max(1, int(batch))
 cfg["num_workers"] = max(0, int(workers))
 cfg["amp"] = amp.lower() not in ("0","false","no","off")
 tag = tag or "grid"
-out_dir = pathlib.Path(cfg["out_dir"]).expanduser() / tag
+task_type = cfg.get("task_type", "seg")
+default_out = pathlib.Path(cfg.get("out_dir", "runs/exp")).expanduser()
+base_exp = cfg.get("experiment_id") or default_out.name
+cfg["experiment_id"] = f"{base_exp}_{tag}"
+root = pathlib.Path(cfg.get("results_root", default_out.parent)).expanduser()
+cfg["results_root"] = str(root)
+out_dir = root / task_type / cfg["experiment_id"]
 cfg["out_dir"] = str(out_dir)
 ml_name = cfg.get("mlflow_experiment_name", "lucchi-grid")
 cfg["mlflow_experiment_name"] = f"{ml_name}_{tag}"
@@ -66,17 +98,38 @@ get_batch_for_size() {
   fi
 }
 
-idx=0
-for size in $DINO_SIZES; do
-  idx=$((idx + 1))
-  size_clean="${size// /}"
-  size_tag="${RUN_TAG}_s${idx}_${size_clean}"
+run_config() {
+  local size="$1"
+  local size_idx="$2"
+  local rep_idx="$3"
+  local size_clean="${size// /}"
+  local size_tag="${RUN_TAG}_rep${rep_idx}_s$((size_idx + 1))_${size_clean}"
+  local batch_val
   batch_val="$(get_batch_for_size "$size_clean")"
   mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$size_tag")
   runtime_cfg="${prep[0]}"
   run_dir="${prep[1]}"
-  echo "[grid/$idx] size=$size_clean batch=$batch_val cfg=$runtime_cfg"
+  echo "[grid size=${size_clean} rep=${rep_idx}] batch=$batch_val cfg=$runtime_cfg"
   "$PY" scripts/train_em_seg.py --cfg "$runtime_cfg"
   "$PY" scripts/eval_em_seg.py --cfg "$runtime_cfg" --out_csv "$run_dir/${size_tag}_metrics.csv"
+  archive_slurm_log "$run_dir" "$size_tag"
   rm -f "$runtime_cfg"
-done
+}
+
+if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
+  task_id=${SLURM_ARRAY_TASK_ID}
+  if (( task_id < 0 || task_id >= TOTAL_TASKS )); then
+    echo "[error] SLURM_ARRAY_TASK_ID=$task_id outside 0..$((TOTAL_TASKS - 1))" >&2
+    exit 1
+  fi
+  size_index=$(( task_id % NUM_SIZES ))
+  rep_index=$(( task_id / NUM_SIZES + 1 ))
+  run_config "${SIZE_LIST[$size_index]}" "$size_index" "$rep_index"
+else
+  echo "[info] SLURM_ARRAY_TASK_ID not set; running all $TOTAL_TASKS configs sequentially"
+  for ((rep=1; rep<=REPEATS; rep++)); do
+    for ((idx=0; idx<NUM_SIZES; idx++)); do
+      run_config "${SIZE_LIST[$idx]}" "$idx" "$rep"
+    done
+  done
+fi

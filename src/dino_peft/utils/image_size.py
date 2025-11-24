@@ -3,6 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import ceil, floor
 from typing import Any, Mapping, Tuple
+from copy import deepcopy
+
+
+DEFAULT_IMG_SIZE_CFG = {
+    "mode": "longest_edge",
+    "target": 1022,
+    "patch_multiple": 14,
+    "rounding": "floor",
+}
 
 
 @dataclass(frozen=True)
@@ -52,7 +61,7 @@ def parse_img_size_config(cfg: Any, default_patch_multiple: int = 14) -> ResizeS
     Accept int / tuple / dict configs and normalize them into a ResizeSpec.
     """
     if cfg is None:
-        raise ValueError("img_size config cannot be None")
+        cfg = deepcopy(DEFAULT_IMG_SIZE_CFG)
 
     if isinstance(cfg, (list, tuple)):
         if len(cfg) != 2:

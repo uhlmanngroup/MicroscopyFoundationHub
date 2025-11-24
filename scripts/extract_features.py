@@ -12,6 +12,8 @@ import yaml
 
 from dino_peft.analysis.feature_extractor import extract_features_from_folder
 from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
+from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
+from copy import deepcopy
 
 DEFAULT_CFG_PATH = Path(__file__).parent.parent / "config" / "em_unsupervised_features_mac.yaml"
 
@@ -68,7 +70,11 @@ def main() -> None:
     model_cfg = cfg.get("model", {})
     runtime_cfg = cfg.get("runtime", {})
 
-    img_size_cfg = runtime_cfg.get("img_size", 518)
+    if "img_size" not in runtime_cfg:
+        img_size_cfg = deepcopy(DEFAULT_IMG_SIZE_CFG)
+        print("[extract_features] img_size not set in config; defaulting to longest_edge=1022.")
+    else:
+        img_size_cfg = runtime_cfg["img_size"]
     data_dir = data_cfg.get("data_dir")
     if data_dir is None:
         raise ValueError("Config must define data.data_dir.")

@@ -19,6 +19,8 @@ from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.models.lora import inject_lora
 from dino_peft.utils.paths import setup_run_dir, update_metrics
+from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
+from copy import deepcopy
 
 
 def pad_collate(batch):
@@ -41,7 +43,17 @@ def pad_collate(batch):
     return torch.stack(padded_imgs), torch.stack(padded_masks), list(names)
 
 
+def _resolve_img_size(cfg: dict):
+    img_size_cfg = cfg.get("img_size")
+    if img_size_cfg is None:
+        img_size_cfg = deepcopy(DEFAULT_IMG_SIZE_CFG)
+        cfg["img_size"] = deepcopy(img_size_cfg)
+        print("[eval_em_seg] img_size not set in config; defaulting to longest_edge=1022.")
+    return img_size_cfg
+
+
 def build_dataset_from_cfg(cfg, split: str, transform):
+    img_size_cfg = _resolve_img_size(cfg)
     dataset_cfg = cfg.get("dataset", {})
     dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
     dataset_params = dict(dataset_cfg.get("params", {}))
@@ -61,7 +73,7 @@ def build_dataset_from_cfg(cfg, split: str, transform):
         dataset_params.setdefault("image_prefix", "mask")
 
     kwargs = {
-        "img_size": cfg["img_size"],
+        "img_size": img_size_cfg,
         "to_rgb": True,
         "transform": transform,
         "binarize": bool(cfg.get("binarize", True)),
@@ -202,6 +214,7 @@ def _pick_device():
     return torch.device("cpu")
 
 def _build_dataset(cfg, split: str, transform):
+    img_size_cfg = _resolve_img_size(cfg)
     split = split.lower()
     img_key = f"{split}_img_dir"
     mask_key = f"{split}_mask_dir"
@@ -214,7 +227,7 @@ def _build_dataset(cfg, split: str, transform):
     common = dict(
         image_dir=cfg[img_key],
         mask_dir=cfg[mask_key],
-        img_size=tuple(cfg["img_size"]),
+        img_size=img_size_cfg,
         to_rgb=True,
         transform=transform,
         binarize=bool(cfg.get("binarize", True)),

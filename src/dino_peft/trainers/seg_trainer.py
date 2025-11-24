@@ -8,6 +8,7 @@ import monai
 from torch.utils.data import DataLoader, random_split
 import torch.nn.functional as F
 from mlflow.tracking import MlflowClient 
+from copy import deepcopy
 
 from dino_peft.datasets.lucchi_seg import LucchiSegDataset
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
@@ -18,6 +19,7 @@ from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
 from dino_peft.models.lora import inject_lora, lora_parameters
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.utils.paths import setup_run_dir, write_run_info, update_metrics
+from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
 
 
 def pick_device(cfg_device: str | None):
@@ -78,6 +80,11 @@ class SegTrainer:
         with open(cfg_path, "r") as f:
             self.cfg = yaml.safe_load(f)
 
+        self.img_size_cfg = deepcopy(self.cfg.get("img_size", DEFAULT_IMG_SIZE_CFG))
+        if "img_size" not in self.cfg:
+            print("[SegTrainer] img_size not set in config; defaulting to longest_edge=1022.")
+        self.cfg["img_size"] = deepcopy(self.img_size_cfg)
+
         # --- seed (repro) ---
         seed = int(self.cfg.get("seed", 0))
         import random, numpy as np
@@ -131,7 +138,7 @@ class SegTrainer:
 
         def _build_dataset(img_dir, mask_dir, transform):
             kwargs = {
-                "img_size": self.cfg["img_size"],
+                "img_size": self.img_size_cfg,
                 "to_rgb": True,
                 "transform": transform,
                 "binarize": bool(self.cfg.get("binarize", True)),

@@ -20,7 +20,11 @@ dataset:
 
 # ---- model / backbone ----
 dino_size: base
-img_size: [560, 560]    # width x height; multiple of 14 keeps ViT patch alignment
+img_size:
+  mode: longest_edge
+  target: 1022   # largest <= 1024 while staying multiple of 14
+  patch_multiple: 14
+  rounding: floor
 num_classes: 2
 
 # ---- MLflow ----

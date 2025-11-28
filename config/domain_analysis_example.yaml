@@ -1,0 +1,23 @@
+# Domain analysis example config (update paths + experiment metadata before running).
+
+experiment_id: "2025-01-05_B1_domain-gap_demo"
+results_root: "/Users/cfuste/Documents/Results/DINO-LoRA/feats"
+task_type: "domain-analysis"
+
+domain_analysis:
+  domain1:
+    npz: "/Users/cfuste/Documents/Results/DINO-LoRA/feats/2025-01-01_A5_lucchi+droso_dinov2-base_lora-none_feats/features.npz"
+    # Optional filters if the NPZ contains multiple datasets
+    dataset_names: ["lucchi"]
+    # dataset_ids: [0]
+  domain2:
+    npz: "/Users/cfuste/Documents/Results/DINO-LoRA/feats/2025-01-01_A5_lucchi+droso_dinov2-base_lora-none_feats/features.npz"
+    dataset_names: ["droso"]
+    # dataset_ids: [1]
+  n_components: 64
+  seed: 0
+  # Results land under <domain1_npz_parent>/<output_subdir>
+  output_subdir: "domain-analysis"
+  json_name: "metrics.json"
+  csv_name: "metrics.csv"
+  use_run_dir_metrics: false

@@ -1,7 +1,7 @@
 #!/usr/bin/bash -l
 #SBATCH --job-name=dino-single-droso
 #SBATCH --time=48:00:00
-#SBATCH --gpus=V100:1
+#SBATCH --gpus=A100:1
 #SBATCH --cpus-per-task=6
 #SBATCH --mem=48G
 #SBATCH --output=logs/%x-%j.out
@@ -21,7 +21,7 @@ export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 export MLFLOW_TRACKING_URI="file:/scratch/$USER/mlruns_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}"
 
-BASE_CFG="config/droso_cluster.yaml"
+BASE_CFG=${BASE_CFG:-/home/cfuste/GitHub/DINO-EM-PEFT/config/cluster/droso_cluster.yaml}
 DINO_SIZE=${DINO_SIZE:-base}
 EPOCHS=${EPOCHS:-}
 BATCH_SIZE=${BATCH_SIZE:-}

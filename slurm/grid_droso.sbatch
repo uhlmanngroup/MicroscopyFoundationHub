@@ -22,7 +22,7 @@ export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export MLFLOW_TRACKING_URI="file:/scratch/$USER/mlruns_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}"
 
-BASE_CFG="config/droso_cluster.yaml"
+BASE_CFG="config/cluster/droso_cluster.yaml"
 DINO_SIZES=${DINO_SIZES:-"small base large giant"}
 EPOCHS=${EPOCHS:-}
 BATCH_DEFAULT=${BATCH_DEFAULT:-}

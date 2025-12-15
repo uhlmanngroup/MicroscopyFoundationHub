@@ -50,7 +50,7 @@ from dino_peft.utils.transforms import em_dino_unsup_transforms
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # load incomplete TIFFs instead of crashing
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 # Small containers describing dataset runtime settings.
@@ -352,6 +352,7 @@ def build_cache_metadata(
         "filters": _metadata_repr(spec.filters),
         "transform": "em_dino_unsup_transforms",
         "device": runtime_cfg.get("device", "auto"),
+        "runtime_cfg": _metadata_repr(runtime_cfg),
     }
     return meta
 
@@ -548,6 +549,20 @@ def summarize_distances(values: np.ndarray) -> Dict[str, float]:
     }
 
 
+def log10_stats(values: np.ndarray) -> Dict[str, float]:
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.size == 0:
+        return {k: float("nan") for k in ("mean", "std", "median", "min", "max")}
+    log_vals = np.log10(np.maximum(arr, 1e-12))
+    return {
+        "mean": float(np.mean(log_vals)),
+        "std": float(np.std(log_vals)),
+        "median": float(np.median(log_vals)),
+        "min": float(np.min(log_vals)),
+        "max": float(np.max(log_vals)),
+    }
+
+
 def _top_k(indices: np.ndarray, paths: Sequence[str], distances: np.ndarray, squared: np.ndarray, dataset_labels: Sequence[str], k: int) -> List[Dict[str, Any]]:
     top = []
     for idx in indices[:k]:
@@ -582,11 +597,26 @@ def write_distances_csv(
         df.to_csv(csv_path, index=False)
         return
     rows.sort(key=lambda r: r["distance"], reverse=True)
-    header = ["rank", "filepath", "dataset", "distance", "distance_squared", "is_outlier", "sequence_id"]
+    header = [
+        "rank",
+        "filepath",
+        "dataset",
+        "distance",
+        "distance_squared",
+        "threshold",
+        "distance_over_threshold",
+        "distance_minus_threshold",
+        "id_percentile",
+        "tail_prob",
+        "ood_score",
+        "is_outlier",
+        "sequence_id",
+    ]
     with csv_path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=header)
         writer.writeheader()
         for rank, row in enumerate(rows, start=1):
+            seq_val = row.get("sequence_id", np.nan)
             writer.writerow(
                 {
                     "rank": rank,
@@ -594,8 +624,14 @@ def write_distances_csv(
                     "dataset": row["dataset"],
                     "distance": f"{row['distance']:.8f}",
                     "distance_squared": f"{row['distance_squared']:.8f}",
+                    "threshold": f"{row['threshold']:.8f}",
+                    "distance_over_threshold": f"{row['distance_over_threshold']:.8f}",
+                    "distance_minus_threshold": f"{row['distance_minus_threshold']:.8f}",
+                    "id_percentile": f"{row['id_percentile']:.8f}",
+                    "tail_prob": f"{row['tail_prob']:.8e}",
+                    "ood_score": f"{row['ood_score']:.8f}",
                     "is_outlier": int(row["is_outlier"]),
-                    "sequence_id": "" if np.isnan(row["sequence_id"]) else row["sequence_id"],
+                    "sequence_id": "" if (isinstance(seq_val, float) and np.isnan(seq_val)) else seq_val,
                 }
             )
 
@@ -774,6 +810,122 @@ def plot_distance_vs_sequence(
     plt.close(fig)
 
 
+def plot_histogram_log(id_dist: np.ndarray, target_dist: np.ndarray, threshold: float, out_path: Path) -> None:
+    id_pos = id_dist[id_dist > 0]
+    tgt_pos = target_dist[target_dist > 0]
+    combined = np.concatenate([id_pos, tgt_pos])
+    if combined.size == 0:
+        return
+    low = combined.min()
+    high = combined.max()
+    if low <= 0 or not np.isfinite(low) or not np.isfinite(high):
+        return
+    bins = np.logspace(np.log10(low), np.log10(high), num=max(20, min(80, int(math.sqrt(combined.size)))))
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.hist(id_pos, bins=bins, alpha=0.6, label="ID", color="tab:blue")
+    ax.hist(tgt_pos, bins=bins, alpha=0.6, label="Target", color="tab:orange")
+    if threshold > 0:
+        ax.axvline(threshold, color="red", linestyle="--", label=f"threshold={threshold:.3f}")
+    ax.set_xscale("log")
+    ax.set_xlabel("Mahalanobis distance (log scale)")
+    ax.set_ylabel("Count")
+    ax.set_title("Distance histogram (log scale)")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=320)
+    plt.close(fig)
+
+
+def plot_histogram_id_zoom(id_dist: np.ndarray, threshold: float, out_path: Path) -> None:
+    if id_dist.size == 0:
+        return
+    lower = float(np.min(id_dist))
+    upper = float(np.quantile(id_dist, 0.99) * 1.1)
+    if upper <= lower:
+        upper = lower * 1.05 + 1e-6
+    bins = np.linspace(lower, upper, num=50)
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.hist(id_dist, bins=bins, alpha=0.7, color="tab:blue")
+    ax.axvline(threshold, color="red", linestyle="--", label="threshold")
+    ax.set_xlim(lower, upper)
+    ax.set_xlabel("Mahalanobis distance (ID zoom)")
+    ax.set_ylabel("Count")
+    ax.set_title("Distance histogram — ID zoom")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=320)
+    plt.close(fig)
+
+
+def plot_normalized_hist(
+    id_ratio: np.ndarray,
+    target_ratio: np.ndarray,
+    out_path: Path,
+) -> None:
+    combined = np.concatenate([id_ratio, target_ratio])
+    if combined.size == 0:
+        return
+    upper = float(np.quantile(combined, 0.995))
+    upper = max(upper, 1.5)
+    bins = np.linspace(0, upper, num=60)
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.hist(id_ratio, bins=bins, alpha=0.6, label="ID", color="tab:blue")
+    ax.hist(target_ratio, bins=bins, alpha=0.6, label="Target", color="tab:orange")
+    ax.axvline(1.0, color="red", linestyle="--", label="distance = threshold")
+    ax.set_xlabel("Distance / threshold")
+    ax.set_ylabel("Count")
+    ax.set_title("Distance / threshold histogram")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=320)
+    plt.close(fig)
+
+
+def plot_normalized_violin(
+    id_ratio: np.ndarray,
+    target_ratio: np.ndarray,
+    out_path: Path,
+) -> None:
+    if id_ratio.size == 0 and target_ratio.size == 0:
+        return
+    fig, ax = plt.subplots(figsize=(6, 4))
+    data = [id_ratio, target_ratio]
+    parts = ax.violinplot(data, showmeans=True, showextrema=True)
+    for pc, color in zip(parts["bodies"], ("tab:blue", "tab:orange")):
+        pc.set_facecolor(color)
+        pc.set_alpha(0.5)
+    ax.axhline(1.0, color="red", linestyle="--", linewidth=1.0)
+    ax.set_xticks([1, 2], ["ID", "Target"])
+    ax.set_ylabel("Distance / threshold")
+    ax.set_title("Normalized distance distribution")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=320)
+    plt.close(fig)
+
+
+def plot_ood_score_hist(
+    id_scores: np.ndarray,
+    target_scores: np.ndarray,
+    out_path: Path,
+) -> None:
+    combined = np.concatenate([id_scores, target_scores])
+    if combined.size == 0:
+        return
+    upper = float(np.quantile(combined, 0.995))
+    upper = max(upper, 1.0)
+    bins = np.linspace(0, upper, num=60)
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.hist(id_scores, bins=bins, alpha=0.6, label="ID", color="tab:blue")
+    ax.hist(target_scores, bins=bins, alpha=0.6, label="Target", color="tab:orange")
+    ax.set_xlabel("-log10(tail probability)")
+    ax.set_ylabel("Count")
+    ax.set_title("OOD score distribution")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=320)
+    plt.close(fig)
+
+
 # Save an inspection grid of top-K outlier images.
 def save_outlier_grid(paths: Sequence[str], distances: np.ndarray, out_path: Path, cols: int = 4) -> None:
     if not paths:
@@ -891,6 +1043,23 @@ def main() -> None:
     threshold = float(np.quantile(id_dist, quantile))
     id_outliers = id_dist > threshold
     target_outliers = target_dist > threshold
+    safe_threshold = threshold if threshold > 1e-12 else 1e-12
+
+    sorted_id = np.sort(id_dist)
+    denom = max(len(sorted_id), 1)
+
+    def _percentiles(vals: np.ndarray) -> np.ndarray:
+        ranks = np.searchsorted(sorted_id, vals, side="right")
+        return ranks / denom
+
+    id_percentiles = _percentiles(id_dist)
+    target_percentiles = _percentiles(target_dist)
+    id_tail = np.clip(1.0 - id_percentiles, 0.0, 1.0)
+    target_tail = np.clip(1.0 - target_percentiles, 0.0, 1.0)
+    id_ood_scores = -np.log10(np.maximum(id_tail, 1e-12))
+    target_ood_scores = -np.log10(np.maximum(target_tail, 1e-12))
+    id_ratio = id_dist / safe_threshold
+    target_ratio = target_dist / safe_threshold
 
     summary = {
         "embedding_dim": int(id_emb.embeddings.shape[1]),
@@ -907,7 +1076,20 @@ def main() -> None:
         "target_outlier_rate": float(target_outliers.mean()) if len(target_outliers) > 0 else 0.0,
         "id_stats": summarize_distances(id_dist),
         "target_stats": summarize_distances(target_dist),
+        "threshold_quantile": quantile,
+        "threshold_value": threshold,
     }
+    def _ratio_stat(arr: np.ndarray, fn) -> float:
+        return float(fn(arr)) if arr.size > 0 else float("nan")
+
+    summary["id_min_over_threshold"] = _ratio_stat(id_ratio, np.min)
+    summary["id_median_over_threshold"] = _ratio_stat(id_ratio, np.median)
+    summary["id_max_over_threshold"] = _ratio_stat(id_ratio, np.max)
+    summary["target_min_over_threshold"] = _ratio_stat(target_ratio, np.min)
+    summary["target_median_over_threshold"] = _ratio_stat(target_ratio, np.median)
+    summary["target_max_over_threshold"] = _ratio_stat(target_ratio, np.max)
+    summary["id_dist_log10_stats"] = log10_stats(id_dist)
+    summary["target_dist_log10_stats"] = log10_stats(target_dist)
 
     combined_paths = id_emb.paths + target_emb.paths
     combined_dist = np.concatenate([id_dist, target_dist], axis=0)
@@ -930,27 +1112,63 @@ def main() -> None:
     summary_path = run_dir / "summary.json"
     save_summary(summary_path, summary)
 
-    rows: List[Dict[str, Any]] = []
-    for label, dist, dist_sq, paths, seq, flags in (
-        ("id", id_dist, id_sq, id_emb.paths, id_emb.sequence_ids, id_outliers),
-        ("target", target_dist, target_sq, target_emb.paths, target_emb.sequence_ids, target_outliers),
-    ):
-        for idx, path in enumerate(paths):
-            rows.append(
+    dataset_rows: List[Dict[str, Any]] = []
+    dataset_info = {
+        "id": {
+            "dist": id_dist,
+            "dist_sq": id_sq,
+            "paths": id_emb.paths,
+            "seq": id_emb.sequence_ids,
+            "outliers": id_outliers,
+            "ratio": id_ratio,
+            "delta": id_dist - threshold,
+            "percentile": id_percentiles,
+            "tail": id_tail,
+            "score": id_ood_scores,
+        },
+        "target": {
+            "dist": target_dist,
+            "dist_sq": target_sq,
+            "paths": target_emb.paths,
+            "seq": target_emb.sequence_ids,
+            "outliers": target_outliers,
+            "ratio": target_ratio,
+            "delta": target_dist - threshold,
+            "percentile": target_percentiles,
+            "tail": target_tail,
+            "score": target_ood_scores,
+        },
+    }
+    for label, info in dataset_info.items():
+        dist = info["dist"]
+        for idx, path in enumerate(info["paths"]):
+            dataset_rows.append(
                 {
                     "filepath": path,
                     "dataset": label,
                     "distance": float(dist[idx]),
-                    "distance_squared": float(dist_sq[idx]),
-                    "is_outlier": bool(flags[idx]),
-                    "sequence_id": seq[idx],
+                    "distance_squared": float(info["dist_sq"][idx]),
+                    "threshold": float(threshold),
+                    "distance_over_threshold": float(info["ratio"][idx]),
+                    "distance_minus_threshold": float(info["delta"][idx]),
+                    "id_percentile": float(info["percentile"][idx]),
+                    "tail_prob": float(info["tail"][idx]),
+                    "ood_score": float(info["score"][idx]),
+                    "is_outlier": bool(info["outliers"][idx]),
+                    "sequence_id": info["seq"][idx],
                 }
             )
-    write_distances_csv(run_dir / "distances.csv", rows)
+    csv_path = run_dir / "distances.csv"
+    write_distances_csv(csv_path, dataset_rows)
 
     plots_dir = ensure_plot_dir(run_dir)
     plot_histogram(id_dist, target_dist, threshold, plots_dir / "distance_hist.png")
+    plot_histogram_log(id_dist, target_dist, threshold, plots_dir / "distance_hist_log.png")
+    plot_histogram_id_zoom(id_dist, threshold, plots_dir / "distance_hist_id_zoom.png")
     plot_violin(id_dist, target_dist, plots_dir / "distance_violin.png")
+    plot_normalized_hist(id_ratio, target_ratio, plots_dir / "distance_over_threshold_hist.png")
+    plot_normalized_violin(id_ratio, target_ratio, plots_dir / "distance_over_threshold_violin.png")
+    plot_ood_score_hist(id_ood_scores, target_ood_scores, plots_dir / "ood_score_hist.png")
     plot_distance_index(id_dist, target_dist, plots_dir / "distance_vs_index.png")
     plot_distance_vs_sequence(target_emb.sequence_ids, target_dist, plots_dir / "target_distance_vs_sequence.png")
     plot_pca_scatter(
@@ -988,10 +1206,24 @@ def main() -> None:
             },
         )
 
-    print(f"[ood] Threshold ({quantile:.2f} quantile): {threshold:.4f}")
-    print(f"[ood] ID outlier rate: {summary['id_outlier_rate'] * 100:.2f}%")
-    print(f"[ood] Target outlier rate: {summary['target_outlier_rate'] * 100:.2f}%")
-    print(f"[ood] Results saved to: {run_dir}")
+    target_median_ratio = summary["target_median_over_threshold"]
+    target_ratio_txt = (
+        f"{target_median_ratio:.3f}"
+        if target_median_ratio is not None and math.isfinite(target_median_ratio)
+        else "n/a"
+    )
+    print(
+        "[ood] Threshold "
+        f"(quantile={quantile:.2f}): value={threshold:.4f}"
+    )
+    print(
+        "[ood] Outlier rates → "
+        f"ID={summary['id_outlier_rate'] * 100:.2f}% "
+        f"(expected ~{(1.0 - quantile) * 100:.2f}%), "
+        f"Target={summary['target_outlier_rate'] * 100:.2f}%"
+    )
+    print(f"[ood] Target median distance/threshold: {target_ratio_txt}")
+    print(f"[ood] Artifacts: CSV={csv_path}, summary={summary_path}, plots={plots_dir}")
 
 
 if __name__ == "__main__":

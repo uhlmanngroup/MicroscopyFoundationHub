@@ -2,7 +2,7 @@
 # Update the dataset + checkpoint paths before running:
 #   python ood-detection.py --cfg config/mac/ood_detection_mac.yaml
 
-experiment_id: "2025-12-12_B1_lucchi-vs-STACK2droso_dinov2-base_lora-r16_ood"
+experiment_id: "2025-12-15_B1_lucchi-vs-STACK2droso_dinov2-base_NOlora-r16_ood"
 results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
 task_type: "ood-detection"
 
@@ -21,7 +21,7 @@ data:
 
 model:
   dino_size: "base"
-  checkpoint: "/Users/cfuste/Documents/Results/20251201-cluster-backup/seg/lucchi-lora/2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg_lucchigrid24490264_rep1_s2_base/ckpts/best_model.pt"
+  checkpoint: "/Users/cfuste/Documents/Results/20251201-cluster-backup/seg/lucchi-nolora/2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg_lucchigrid24413749_rep1_s2_base/ckpts/best_model.pt"
   pooling: "mean"
   l2_normalize: true
 

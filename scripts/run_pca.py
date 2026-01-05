@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # scripts/run_pca.py
 
-import sys
+import argparse
 import re
 from pathlib import Path
 
@@ -237,8 +237,25 @@ def _save_plotly_scatter(xy, hover_text, groupings, title: str, out_path: Path |
     fig.write_html(str(out_path), include_plotlyjs="cdn")
     return out_path
 
+DEFAULT_CFG = Path(__file__).parent.parent / "configs" / "mac" / "em_pca_mac.yaml"
+
+def parse_args() -> Path:
+    ap = argparse.ArgumentParser(description="Run PCA/UMAP on extracted DINO features.")
+    ap.add_argument("cfg", nargs="?", default=None, help="Path to YAML config.")
+    ap.add_argument(
+        "--cfg",
+        "--config",
+        dest="cfg_flag",
+        default=None,
+        help="Path to YAML config.",
+    )
+    args = ap.parse_args()
+    cfg_path = args.cfg_flag or args.cfg or str(DEFAULT_CFG)
+    return Path(cfg_path).expanduser()
+
+
 def main():
-    cfg_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config/em_pca_mac.yaml")
+    cfg_path = parse_args()
     cfg = load_cfg(cfg_path)
 
     data_cfg = cfg.get("data", {})
@@ -323,16 +340,30 @@ def main():
         )
 
     dino_size = None
+    backbone_name = None
+    backbone_variant = None
     if bundle.meta:
         dino_size = bundle.meta.get("dino_size")
+        backbone_name = bundle.meta.get("backbone_name")
+        backbone_variant = bundle.meta.get("backbone_variant")
     if dino_size is None and hasattr(bundle, "dino_size"):
         dino_size = getattr(bundle, "dino_size")
     if isinstance(dino_size, (list, np.ndarray)):
         dino_size = dino_size[0]
+    if isinstance(backbone_name, (list, np.ndarray)):
+        backbone_name = backbone_name[0]
+    if isinstance(backbone_variant, (list, np.ndarray)):
+        backbone_variant = backbone_variant[0]
 
-    # Title with DINO size and explained variance of plotted PCs
+    # Title with backbone label and explained variance of plotted PCs
     evr = pca.explained_variance_ratio_
-    title = f"DINO {dino_size} PCA (PC1 {evr[i]:.1%}, PC2 {evr[j]:.1%})" if dino_size else f"DINO PCA (PC1 {evr[i]:.1%}, PC2 {evr[j]:.1%})"
+    if backbone_name or backbone_variant:
+        label = f"{backbone_name or 'backbone'} {backbone_variant or ''}".strip()
+    elif dino_size:
+        label = f"DINO {dino_size}"
+    else:
+        label = "DINO"
+    title = f"{label} PCA (PC1 {evr[i]:.1%}, PC2 {evr[j]:.1%})"
 
     seq_values, z_planes, image_names = _collect_image_metadata(getattr(bundle, "image_paths", None), xy.shape[0])
     hover_text = _build_hover_text(
@@ -399,7 +430,16 @@ def main():
             l2norm=l2norm,
         )
         _, umap_emb = run_umap(feats_pre, **umap_params)
-        title_umap = f"DINO {dino_size} PCA{pre_umap_dim}→UMAP (nn={umap_params['n_neighbors']}, md={umap_params['min_dist']})" if dino_size else f"PCA{pre_umap_dim}→UMAP"
+        if backbone_name or backbone_variant:
+            label_umap = f"{backbone_name or 'backbone'} {backbone_variant or ''}".strip()
+        elif dino_size:
+            label_umap = f"DINO {dino_size}"
+        else:
+            label_umap = "PCA"
+        title_umap = (
+            f"{label_umap} PCA{pre_umap_dim}→UMAP "
+            f"(nn={umap_params['n_neighbors']}, md={umap_params['min_dist']})"
+        )
         umap_xy = umap_emb[:, :2]
         scatter_2d(
             xy=umap_emb[:, :2],

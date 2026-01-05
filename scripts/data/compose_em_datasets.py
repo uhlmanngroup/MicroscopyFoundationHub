@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Compose Drosophila + Lucchi++ into one dataset with:
 #   <OUT_ROOT>/{train,test}/{images,masks}/ and mapping.csv
-# Run: python scripts/compose_em_datasets.py
+# Run: python scripts/data/compose_em_datasets.py
 
 from pathlib import Path
 import csv, shutil, random

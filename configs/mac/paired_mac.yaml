@@ -12,6 +12,14 @@ results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
 task_type: "seg"
 
 # ---- model / backbone ----
+backbone:
+  name: dinov2
+  variant: small
+  load_backend: torchhub
+  weights: null
+  repo_dir: null
+  preprocess:
+    preset: em
 dino_size: small
 img_size:
   mode: longest_edge
@@ -26,8 +34,6 @@ dataset:
     pair_mode: "stem"
     recursive: false
 
-# ---- MLflow ----
-mlflow_experiment_name: smoke_paired_head_only
 
 # ---- LoRA / head ----
 use_lora: false          # head-only for a quicker sanity run

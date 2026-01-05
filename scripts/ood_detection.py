@@ -41,11 +41,15 @@ except Exception:  # pragma: no cover
     _HAVE_SKLEARN = False
 
 from dino_peft.analysis.dimred import l2_normalize, run_pca
-from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
+from dino_peft.backbones import (
+    build_backbone,
+    build_preprocess_transform,
+    resolve_backbone_cfg,
+    resolve_preprocess_cfg,
+)
 from dino_peft.models.lora import inject_lora
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
 from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
-from dino_peft.utils.transforms import em_dino_unsup_transforms
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # load incomplete TIFFs instead of crashing
 
@@ -81,7 +85,14 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description="OOD detection with Mahalanobis distances on DINO embeddings."
     )
-    ap.add_argument("--cfg", type=str, required=True, help="Path to YAML config.")
+    ap.add_argument(
+        "--cfg",
+        "--config",
+        dest="cfg",
+        type=str,
+        required=True,
+        help="Path to YAML config.",
+    )
     return ap.parse_args()
 
 
@@ -442,15 +453,15 @@ def build_dataset_spec(
 
 
 # Build DINO backbone and optionally inject LoRA weights.
-def load_backbone(model_cfg: Dict[str, Any], device: torch.device) -> DINOv2FeatureExtractor:
-    """Instantiate DINO backbone and optionally restore LoRA adapters."""
-    dino_size = model_cfg.get("dino_size", "base")
+def load_backbone(model_cfg: Dict[str, Any], device: torch.device):
+    """Instantiate backbone adapter and optionally restore LoRA adapters."""
+    backbone_cfg = resolve_backbone_cfg(model_cfg)
     checkpoint = model_cfg.get("checkpoint")
     checkpoint_path = Path(checkpoint).expanduser() if checkpoint else None
     if checkpoint_path and not checkpoint_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    backbone = DINOv2FeatureExtractor(size=dino_size, device=device)
+    backbone = build_backbone(backbone_cfg, device=device)
     backbone.eval()
 
     if checkpoint_path:
@@ -462,7 +473,7 @@ def load_backbone(model_cfg: Dict[str, Any], device: torch.device) -> DINOv2Feat
         lora_targets = ckpt_cfg.get("lora_targets", ["attn.qkv", "attn.proj"])
         if use_lora and lora_rank > 0:
             inject_lora(
-                backbone.vit,
+                backbone.model,
                 target_substrings=lora_targets,
                 r=lora_rank,
                 alpha=lora_alpha if lora_alpha > 0 else lora_rank,
@@ -470,11 +481,11 @@ def load_backbone(model_cfg: Dict[str, Any], device: torch.device) -> DINOv2Feat
             lora_state = ckpt.get("backbone_lora") or {}
             if not lora_state:
                 raise RuntimeError("Checkpoint missing backbone_lora weights.")
-            state = backbone.state_dict()
+            state = backbone.model.state_dict()
             for key, tensor in lora_state.items():
                 if key in state:
                     state[key] = tensor
-            backbone.load_state_dict(state, strict=False)
+            backbone.model.load_state_dict(state, strict=False)
         else:
             print("[ood] Checkpoint has no LoRA weights; using base backbone.")
     return backbone
@@ -503,12 +514,14 @@ def build_cache_metadata(
 ) -> Dict[str, Any]:
     checkpoint = model_cfg.get("checkpoint")
     pooling = model_cfg.get("pooling", "mean")
+    backbone_cfg = resolve_backbone_cfg(model_cfg)
     # Encode everything that affects the embedding values so cache hits are safe.
     meta = {
         "cache_version": CACHE_VERSION,
         "dataset_label": spec.label,
         "dataset_root": str(spec.root),
-        "dino_size": model_cfg.get("dino_size", "base"),
+        "backbone_name": backbone_cfg.get("name"),
+        "backbone_variant": backbone_cfg.get("variant"),
         "checkpoint": str(checkpoint) if checkpoint else None,
         "img_size": _metadata_repr(spec.img_size),
         "pooling": pooling,
@@ -516,6 +529,7 @@ def build_cache_metadata(
         "paths_digest": _compute_paths_digest(paths),
         "filters": _metadata_repr(spec.filters),
         "transform": "em_dino_unsup_transforms",
+        "preprocess_preset": (backbone_cfg.get("preprocess") or {}).get("preset", "em"),
         "device": runtime_cfg.get("device", "auto"),
         "runtime_cfg": _metadata_repr(runtime_cfg),
         "spatial_preprocess": _metadata_repr(spatial_fingerprint or {}),
@@ -597,7 +611,7 @@ def _extract_sequence_ids(paths: Sequence[str], pattern: Optional[str], group: O
 @torch.no_grad()
 def extract_embeddings_for_dataset(
     spec: DatasetSpec,
-    model: DINOv2FeatureExtractor,
+    model,
     device: torch.device,
     model_cfg: Dict[str, Any],
     runtime_cfg: Dict[str, Any],
@@ -626,7 +640,8 @@ def extract_embeddings_for_dataset(
                 sequence_ids=seq,
             )
 
-    transform = em_dino_unsup_transforms(img_size=spec.img_size)
+    preprocess_cfg = resolve_preprocess_cfg(model_cfg, default_img_size=spec.img_size)
+    transform = build_preprocess_transform(preprocess_cfg["preset"], preprocess_cfg["img_size"])
     # Wrap dataset so spatial preprocessor is applied right after PIL load.
     dataset = ImagePathDataset(
         spec.paths,
@@ -651,13 +666,15 @@ def extract_embeddings_for_dataset(
     # Single pass over dataset—no gradients—just feature extraction.
     for imgs, paths in tqdm(loader, desc=desc):
         imgs = imgs.to(device, non_blocking=True)
-        feats = model(imgs)
-        if feats.ndim != 4:
-            raise RuntimeError(f"Backbone output expected 4D, got {tuple(feats.shape)}")
+        output = model(imgs)
         if pooling == "mean":
-            pooled = feats.mean(dim=(2, 3))
+            pooled = output.global_embedding
+        elif pooling == "cls":
+            if output.cls_token is None:
+                raise ValueError("CLS pooling requested but backbone did not return cls_token.")
+            pooled = output.cls_token.squeeze(1)
         else:
-            raise ValueError(f"Unsupported pooling '{pooling}'. Use 'mean'.")
+            raise ValueError(f"Unsupported pooling '{pooling}'. Use 'mean' or 'cls'.")
         vectors.append(pooled.detach().cpu().numpy())
         ordered_paths.extend(paths)
 
@@ -1241,6 +1258,8 @@ def main() -> None:
             "id_root": str(id_spec.root),
             "target_root": str(target_spec.root),
             "checkpoint": model_cfg.get("checkpoint"),
+            "backbone_name": resolve_backbone_cfg(model_cfg).get("name"),
+            "backbone_variant": resolve_backbone_cfg(model_cfg).get("variant"),
         },
     )
 

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
+import argparse
+import csv
+from copy import deepcopy
 from pathlib import Path
-import argparse, yaml, torch, numpy as np
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import numpy as np
-import csv
-import os
-import mlflow
-from mlflow import MlflowClient
-import torch.nn.functional as F
 
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
 from dino_peft.datasets.lucchi_seg import LucchiSegDataset
@@ -16,14 +17,11 @@ from dino_peft.datasets.droso_seg import DrosoSegDataset
 from dino_peft.utils.transforms import em_seg_transforms, denorm_imagenet
 from dino_peft.utils.viz import colorize_mask
 from dino_peft.utils.plots import save_triptych_grid
-from dino_peft.models.backbone_dinov2 import DINOv2FeatureExtractor
+from dino_peft.backbones import build_backbone, patch_tokens_to_grid, resolve_backbone_cfg
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.models.lora import inject_lora
 from dino_peft.utils.paths import setup_run_dir, update_metrics
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
-from copy import deepcopy
-
-
 def pad_collate(batch):
     imgs, masks, names = zip(*batch)
     max_h = max(img.shape[-2] for img in imgs)
@@ -126,7 +124,8 @@ def eval_loop(
         imgs  = imgs.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
 
-        feats = backbone(imgs)
+        out = backbone(imgs)
+        feats = patch_tokens_to_grid(out)
         logits = head(feats, masks.shape[-2:])
         pred = logits.argmax(1)
 
@@ -281,7 +280,13 @@ def best_checkpoint(run_dir) -> Path:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cfg", required=True, help="Training YAML or saved config_used.yaml / config_runtime.yaml")
+    ap.add_argument(
+        "--cfg",
+        "--config",
+        dest="cfg",
+        required=True,
+        help="Training YAML or saved config_used.yaml / config_runtime.yaml",
+    )
     ap.add_argument("--ckpt", default="", help="Optional checkpoint path; if empty, auto-pick latest in run directory")
     ap.add_argument("--out_csv", default="", help="Optional metrics output; if empty, write run_dir/metrics_test.csv")
     args = ap.parse_args()
@@ -319,13 +324,14 @@ def main():
     )
 
     # model
-    bb = DINOv2FeatureExtractor(size=cfg["dino_size"], device=str(device))
+    backbone_cfg = resolve_backbone_cfg(cfg)
+    bb = build_backbone(backbone_cfg, device=device)
     use_lora = cfg.get("use_lora", True)
     if use_lora:
         targets = cfg.get("lora_targets", ["attn.qkv", "attn.proj"])
         r = int(cfg.get("lora_rank", 8))
         alpha = int(cfg.get("lora_alpha", 16))
-        lora_names = inject_lora(bb.vit, target_substrings=targets, r=r, alpha=alpha)
+        lora_names = inject_lora(bb.model, target_substrings=targets, r=r, alpha=alpha)
 
     bb.to(device)
     head = SegHeadDeconv(in_ch=bb.embed_dim, num_classes=cfg["num_classes"], n_ups=4, base_ch=512).to(device)
@@ -333,20 +339,20 @@ def main():
     # load checkpoint (LoRA + head)
     ckpt = torch.load(ckpt_path, map_location=device)
     head.load_state_dict(ckpt["head"])
-    bb_state = bb.state_dict()
+    bb_state = bb.model.state_dict()
     lora_dict = ckpt.get("backbone_lora", {})
     matched = 0
     for k, v in lora_dict.items():
         if k in bb_state:
             bb_state[k] = v
             matched += 1
-    bb.load_state_dict(bb_state, strict=False)
+    bb.model.load_state_dict(bb_state, strict=False)
 
     bb.eval(); head.eval()
     # --- compute metrics ---
     iou, dice, iou_f, dice_f = eval_loop(bb, head, loader, device, cfg["num_classes"], out_dir=run_dir)
 
-    # --- write CSV BEFORE logging to MLflow ---
+    # --- write CSV before updating metrics.json ---
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with out_csv.open("w", newline="") as f:
         w = csv.writer(f)
@@ -367,31 +373,6 @@ def main():
             "num_classes": int(cfg["num_classes"]),
         },
     )
-
-    # --- single MLflow run ---
-    mlflow.set_tracking_uri(f"file:{(Path.cwd()/'mlruns').as_posix()}")
-    mlflow.set_experiment(os.environ.get("MLFLOW_EXPERIMENT_NAME", "default"))
-
-    with mlflow.start_run(run_name="eval") as run:
-        # force hydration and print where it’s going
-        mlflow.log_param("phase", "eval")
-        mlflow.log_metric("canary/step0", 0.0, step=0)
-        print("[mlflow:eval] cwd=", Path.cwd().as_posix(),
-              "tracking_uri=", mlflow.get_tracking_uri(),
-              "run_id=", run.info.run_id,
-              "artifact_uri=", mlflow.get_artifact_uri())
-
-        # metrics
-        mlflow.log_metric("test/iou_f",  float(iou_f))
-        mlflow.log_metric("test/Dice_fg", float(dice_f))
-
-        # artifacts
-        mlflow.log_artifact(str(out_csv), artifact_path="eval")
-        prev_dir = run_dir / "figs" / "eval_previews"
-        if prev_dir.exists():
-            mlflow.log_artifacts(str(prev_dir), artifact_path="eval_previews")
-
-
 
 if __name__ == "__main__":
     main()

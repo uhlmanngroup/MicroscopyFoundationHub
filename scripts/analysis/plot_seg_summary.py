@@ -4,10 +4,10 @@
 Examples:
 
     # Uses ~/Downloads/summary by default and writes into ./plots
-    python scripts/plot_seg_summary.py
+    python scripts/analysis/plot_seg_summary.py
 
     # Custom locations
-    python scripts/plot_seg_summary.py \\
+    python scripts/analysis/plot_seg_summary.py \\
         --summary-dir /path/to/summary \\
         --output-dir reports/plots \\
         --dpi 250
@@ -121,7 +121,17 @@ def prepare_frames(summary_path: Path, runs_path: Path, meta_path: Path) -> Summ
     runs_df = pd.read_csv(runs_path)
     metadata = read_json(meta_path)
 
-    dino_dtype = CategoricalDtype(categories=DINO_ORDER, ordered=True)
+    dino_values = (
+        summary_df["dino_size"].astype(str).str.lower().dropna().unique().tolist()
+    )
+    dino_values.extend(
+        runs_df["dino_size"].astype(str).str.lower().dropna().unique().tolist()
+    )
+    dino_values = list(dict.fromkeys(dino_values))
+    dino_order = [v for v in DINO_ORDER if v in dino_values] + [
+        v for v in dino_values if v not in DINO_ORDER
+    ]
+    dino_dtype = CategoricalDtype(categories=dino_order, ordered=True)
     lora_dtype = CategoricalDtype(categories=USE_LORA_LABELS, ordered=True)
 
     summary_df["dino_size"] = (
@@ -144,6 +154,8 @@ def prepare_frames(summary_path: Path, runs_path: Path, meta_path: Path) -> Summ
     )
     runs_df["use_lora_label"] = runs_df["use_lora_label"].astype(lora_dtype)
 
+    metadata = dict(metadata)
+    metadata["dino_order"] = dino_order
     return SummaryBundle(summary=summary_df, runs=runs_df, metadata=metadata)
 
 
@@ -398,7 +410,8 @@ def export_interactive_dashboard(bundle: SummaryBundle, output_path: Path) -> No
     html_sections: List[str] = [
         "<h1 style='font-family:Helvetica,Arial,sans-serif;'>DINO-EM summary dashboard</h1>"
     ]
-    category_orders = {"dino_size": DINO_ORDER, "use_lora_label": USE_LORA_LABELS}
+    dino_order = bundle.metadata.get("dino_order", DINO_ORDER)
+    category_orders = {"dino_size": dino_order, "use_lora_label": USE_LORA_LABELS}
 
     for metric, label in (("foreground_iou", "Foreground IoU"), ("mean_iou", "Mean IoU")):
         fig = px.bar(

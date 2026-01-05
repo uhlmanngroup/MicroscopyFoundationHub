@@ -20,10 +20,10 @@ export PYTHONUNBUFFERED=1
 export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
-export MLFLOW_TRACKING_URI="file:/scratch/$USER/mlruns_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}"
 
-BASE_CFG="config/paired_cluster.yaml"
+BASE_CFG="configs/cluster/paired_cluster.yaml"
 DINO_SIZES=${DINO_SIZES:-"small base large giant"}
+BACKBONE_NAME=${BACKBONE_NAME:-dinov2}
 EPOCHS=${EPOCHS:-}
 BATCH_DEFAULT=${BATCH_DEFAULT:-}
 NUM_WORKERS=${NUM_WORKERS:-}
@@ -58,12 +58,16 @@ archive_slurm_log() {
 }
 
 prepare_cfg() {
-  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" use_lora="$7" tag="$8"
-  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$use_lora" "$tag" <<'PY'
+  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" use_lora="$7" tag="$8" backbone_name="$9"
+  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$use_lora" "$tag" "$backbone_name" <<'PY'
 import sys, yaml, tempfile, pathlib, re
-base, size, epochs, batch, workers, amp, use_lora, tag = sys.argv[1:]
+base, size, epochs, batch, workers, amp, use_lora, tag, backbone_name = sys.argv[1:]
 cfg = yaml.safe_load(open(base))
 cfg["dino_size"] = size
+backbone = cfg.get("backbone") or {}
+backbone["name"] = backbone_name or backbone.get("name", "dinov2")
+backbone["variant"] = size
+cfg["backbone"] = backbone
 if epochs:
     cfg["epochs"] = max(1, int(epochs))
 if batch:
@@ -89,8 +93,6 @@ root = pathlib.Path(cfg.get("results_root", default_out.parent)).expanduser()
 cfg["results_root"] = str(root)
 out_dir = root / task_type / cfg["experiment_id"]
 cfg["out_dir"] = str(out_dir)
-ml_name = cfg.get("mlflow_experiment_name", "paired-grid")
-cfg["mlflow_experiment_name"] = f"{ml_name}_{mode}_{tag}"
 tmp = tempfile.NamedTemporaryFile(prefix=f"{tag}_", suffix=".yaml", delete=False)
 with open(tmp.name, "w") as f:
     yaml.safe_dump(cfg, f, sort_keys=False)
@@ -120,7 +122,7 @@ run_config() {
   local size_tag="${RUN_TAG}_rep${rep_id}_s$((size_idx + 1))_${size_clean}"
   local batch_val
   batch_val="$(get_batch_for_size "$size_clean")"
-  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag")
+  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME")
   runtime_cfg="${prep[0]}"
   run_dir="${prep[1]}"
   echo "[grid size=${size_clean} rep=${rep_id}] batch=$batch_val lora=$USE_LORA cfg=$runtime_cfg"

@@ -4,7 +4,7 @@
 Cluster reminder (plain CLI):
 
     conda activate dino-peft
-    python scripts/summarize_seg_results.py --root /scratch/$USER/Results/DINO-LoRA/seg
+    python scripts/analysis/summarize_seg_results.py --root /scratch/$USER/Results/DINO-LoRA/seg
 
 Tweak `--root` if the runs live elsewhere.
 """
@@ -23,6 +23,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
+from dino_peft.backbones import resolve_backbone_cfg
 METRIC_KEYS: Tuple[str, ...] = (
     "mean_dice",
     "mean_iou",
@@ -38,6 +39,8 @@ class RunRecord:
     run_dir: Path
     rel_run_dir: str
     experiment_id: str
+    backbone_name: Optional[str]
+    backbone_variant: Optional[str]
     dino_size: str
     use_lora: bool
     replicate: Optional[int]
@@ -148,12 +151,15 @@ def collect_runs(
         eval_metrics = metrics.get("eval", {})
         train_metrics = metrics.get("train", {})
 
+        backbone_cfg = resolve_backbone_cfg(cfg)
         run_records.append(
             RunRecord(
                 run_dir=run_dir,
                 rel_run_dir=safe_relative_to(run_dir, root),
                 experiment_id=cfg.get("experiment_id", run_dir.name),
-                dino_size=str(cfg.get("dino_size", "unknown")).lower(),
+                backbone_name=backbone_cfg.get("name"),
+                backbone_variant=backbone_cfg.get("variant"),
+                dino_size=str(backbone_cfg.get("variant", cfg.get("dino_size", "unknown"))).lower(),
                 use_lora=bool(cfg.get("use_lora", False)),
                 replicate=extract_replicate(run_dir.name),
                 seed=train_metrics.get("seed"),
@@ -232,6 +238,8 @@ def serialize_run_record(record: RunRecord) -> Dict[str, object]:
         "run_dir": str(record.run_dir),
         "rel_run_dir": record.rel_run_dir,
         "experiment_id": record.experiment_id,
+        "backbone_name": record.backbone_name,
+        "backbone_variant": record.backbone_variant,
         "dino_size": record.dino_size,
         "use_lora": record.use_lora,
         "replicate": record.replicate,
@@ -273,6 +281,8 @@ def main() -> None:
         "rel_run_dir",
         "experiment_id",
         "use_lora",
+        "backbone_name",
+        "backbone_variant",
         "dino_size",
         "replicate",
         "seed",

@@ -1,5 +1,5 @@
 # Cluster config for Mahalanobis OOD detection (Lucchi ID vs Droso target).
-# Submit via: python ood-detection.py --cfg config/cluster/ood_detection_cluster.yaml
+# Submit via: python scripts/ood_detection.py --cfg configs/cluster/ood_detection_cluster.yaml
 
 experiment_id: "2025-02-10_B1_lucchi-vs-droso_dinov2-base_lora-r16_ood"
 results_root: "/home/cfuste/data/DINO-LoRA"
@@ -19,6 +19,14 @@ data:
     # file_regex: ".*sequence42.*"   # optional regex filter example
 
 model:
+  backbone:
+    name: dinov2
+    variant: base
+    load_backend: torchhub
+    weights: null
+    repo_dir: null
+    preprocess:
+      preset: em
   dino_size: "base"
   checkpoint: "/home/cfuste/data/DINO-LoRA/seg/2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg/ckpts/best_model.pt"
   pooling: "mean"

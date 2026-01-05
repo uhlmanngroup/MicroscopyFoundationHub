@@ -3,9 +3,9 @@
 Utility to backfill Slurm log files into their corresponding run directories.
 
 Usage:
-    python scripts/move_result_logs.py \
-        --logs-dir /home/cfuste/GitHub/DINO-EM-PEFT/logs \
-        --runs-dir /home/cfuste/data/DINO-LoRA/seg
+    python scripts/utils/move_result_logs.py \
+        --logs-dir /path/to/slurm/logs \
+        --runs-dir /path/to/results/seg
 """
 
 from __future__ import annotations

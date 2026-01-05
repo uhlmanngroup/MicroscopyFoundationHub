@@ -11,6 +11,14 @@ data:
   data_dir: "/home/cfuste/data/datasets/DINO-POC/test/images"
 
 model:
+  backbone:
+    name: dinov2
+    variant: base
+    load_backend: torchhub
+    weights: null
+    repo_dir: null
+    preprocess:
+      preset: em
   dino_size: "base"
   checkpoint: "/home/cfuste/data/DINO-LoRA/seg/paired-lora/2025-01-01_A2_dinopoc_dinov2-base_lora-r16_seg_pairedgrid24370385_rep1_s2_base/ckpts/best_model.pt"
 

@@ -203,4 +203,7 @@ ax.set_title("EM Segmentation – Foreground IoU comparison")
 
 plt.tight_layout()
 plt.subplots_adjust(bottom=0.18)  # extra space for legend
-plt.savefig("/Users/cfuste/Documents/GitHub/DINO-EM-PEFT/docs/media/fancyplot.png", dpi=300)
+repo_root = Path(__file__).resolve().parents[2]
+out_path = repo_root / "docs" / "media" / "fancyplot.png"
+out_path.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(out_path, dpi=300)

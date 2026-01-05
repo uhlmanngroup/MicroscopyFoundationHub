@@ -19,6 +19,14 @@ dataset:
     recursive: false
 
 # ---- model / backbone ----
+backbone:
+  name: dinov2
+  variant: base
+  load_backend: torchhub
+  weights: null
+  repo_dir: null
+  preprocess:
+    preset: em
 dino_size: base
 img_size:
   mode: longest_edge
@@ -27,8 +35,6 @@ img_size:
   rounding: floor
 num_classes: 2
 
-# ---- MLflow ----
-mlflow_experiment_name: Lora-Dice-R16-img560-DINOPOC
 
 # ---- LoRA ----
 use_lora: true

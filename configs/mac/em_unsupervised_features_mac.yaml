@@ -8,6 +8,14 @@ data:
 
 model:
   # One of: small, base, large, giant
+  backbone:
+    name: dinov2
+    variant: base
+    load_backend: torchhub
+    weights: null
+    repo_dir: null
+    preprocess:
+      preset: em
   dino_size: "base"
 
 runtime:

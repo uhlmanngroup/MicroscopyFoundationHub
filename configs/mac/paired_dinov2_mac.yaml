@@ -1,13 +1,13 @@
-# Environment: Mac / local smoke test — Paired Lucchi+Droso dataset
+# Environment: Mac / local paired Lucchi+Droso dataset
 
-# Paired dataset (Lucchi ⟷ Droso) already pre-composed
+# Paired dataset (Lucchi <-> Droso) already pre-composed
 train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/images"
 train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/masks"
 test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/images"
 test_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/masks"
 
 # results + experiment naming (edit before each run)
-experiment_id: "2025-01-02_smoke_paired_dinov2-small_head_seg"
+experiment_id: "2025-01-02_paired_dinov2-small_head_seg"
 results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
 task_type: "seg"
 

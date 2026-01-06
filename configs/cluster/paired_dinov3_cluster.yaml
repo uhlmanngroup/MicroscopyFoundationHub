@@ -1,4 +1,5 @@
-# Environment: cluster (UZH Science) — composed DINO-POC dataset
+# Environment: cluster (UZH Science) - composed DINO-POC dataset
+# Short DINOv3 vits16 head-only run for a quick sanity check.
 
 # ---- I/O ----
 train_img_dir: "/home/cfuste/data/datasets/DINO-POC/train/images"
@@ -7,7 +8,7 @@ test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
 test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
 
 # results + experiment naming
-experiment_id: "2025-01-01_A2_dinopoc_dinov2-base_lora-r16_seg"
+experiment_id: "2025-01-02_A2_dinopoc_dinov3-vits16_head_seg"
 results_root: "/home/cfuste/data/DINO-LoRA"
 task_type: "seg"
 
@@ -20,32 +21,32 @@ dataset:
 
 # ---- model / backbone ----
 backbone:
-  name: dinov2
-  variant: base
+  name: dinov3
+  variant: vits16
   load_backend: torchhub
-  weights: null
-  repo_dir: null
+  repo_dir: /home/cfuste/data/GitHub/dinov3
+  weights: /home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
   preprocess:
     preset: em
-dino_size: base
+dino_size: vits16
 img_size:
   mode: longest_edge
-  target: 1022   # largest <= 1024 while staying multiple of 14
-  patch_multiple: 14
+  target: 1022   # largest <= 1024 while staying multiple of 16
+  patch_multiple: 16
   rounding: floor
 num_classes: 2
 
 
 # ---- LoRA ----
-use_lora: true
+use_lora: false
 lora_targets: [attn.qkv, attn.proj]
 lora_rank: 16
 lora_alpha: 32
 
 # ---- training ----
-batch_size: 2
-epochs: 80
-patience: 20
+batch_size: 1
+epochs: 5
+patience: 5
 lr: 0.00005
 weight_decay: 0.0001
 num_workers: 4
@@ -53,7 +54,7 @@ device: auto
 amp: false
 
 # ---- loss (CE + Tversky on foreground) ----
-loss: dice      # ce, dice, ce_tversky 
+loss: dice      # ce, dice, ce_tversky
 class_weights: [1.0, 15.0]    # bg, fg
 tversky_alpha: 0.7
 tversky_beta: 0.3

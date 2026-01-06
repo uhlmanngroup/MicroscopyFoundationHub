@@ -1,5 +1,5 @@
 #!/usr/bin/bash -l
-#SBATCH --job-name=dino-grid-paired
+#SBATCH --job-name=dino-grid-paired-dinov2
 #SBATCH --time=48:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100
@@ -21,7 +21,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
-BASE_CFG="configs/cluster/paired_cluster.yaml"
+BASE_CFG="configs/cluster/paired_dinov2_cluster.yaml"
 DINO_SIZES=${DINO_SIZES:-"small base large giant"}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov2}
 EPOCHS=${EPOCHS:-}
@@ -29,7 +29,7 @@ BATCH_DEFAULT=${BATCH_DEFAULT:-}
 NUM_WORKERS=${NUM_WORKERS:-}
 AMP=${AMP:-}
 USE_LORA=${USE_LORA:-}
-RUN_TAG=${RUN_TAG:-pairedgrid${SLURM_JOB_ID:-manual}}
+RUN_TAG=${RUN_TAG:-pairedgrid-dinov2-${SLURM_JOB_ID:-manual}}
 REPEATS=${REPEATS:-5}
 
 read -r -a SIZE_LIST <<< "$DINO_SIZES"

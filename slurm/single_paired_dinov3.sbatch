@@ -1,5 +1,5 @@
 #!/usr/bin/bash -l
-#SBATCH --job-name=dino-single-paired
+#SBATCH --job-name=dino-single-paired-dinov3
 #SBATCH --time=48:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100
@@ -21,15 +21,15 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 
-BASE_CFG="configs/cluster/paired_cluster.yaml"
-DINO_SIZE=${DINO_SIZE:-base}
-BACKBONE_NAME=${BACKBONE_NAME:-dinov2}
+BASE_CFG="configs/cluster/paired_dinov3_cluster.yaml"
+DINO_SIZE=${DINO_SIZE:-vits16}
+BACKBONE_NAME=${BACKBONE_NAME:-dinov3}
 BACKBONE_VARIANT=${BACKBONE_VARIANT:-$DINO_SIZE}
 EPOCHS=${EPOCHS:-}
 BATCH_SIZE=${BATCH_SIZE:-}
 NUM_WORKERS=${NUM_WORKERS:-}
 AMP=${AMP:-}
-RUN_TAG=${RUN_TAG:-paired${SLURM_JOB_ID:-manual}}
+RUN_TAG=${RUN_TAG:-paired-dinov3-${SLURM_JOB_ID:-manual}}
 
 archive_slurm_log() {
   local dest_dir="$1" tag="$2"
@@ -42,7 +42,7 @@ archive_slurm_log() {
     local dest="${dest_dir}/logs/${tag}_slurm.out"
     mkdir -p "$(dirname "$dest")"
     mv "$src" "$dest"
-    echo "[log] moved slurm log → $dest"
+    echo "[log] moved slurm log -> $dest"
   else
     echo "[log] slurm output not found at $src" >&2
   fi
@@ -56,7 +56,7 @@ base, size, epochs, batch, workers, amp, tag, backbone_name = sys.argv[1:]
 cfg = yaml.safe_load(open(base))
 cfg["dino_size"] = size
 backbone = cfg.get("backbone") or {}
-backbone["name"] = backbone_name or backbone.get("name", "dinov2")
+backbone["name"] = backbone_name or backbone.get("name", "dinov3")
 backbone["variant"] = size
 cfg["backbone"] = backbone
 if epochs:

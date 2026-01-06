@@ -7,6 +7,11 @@
 #SBATCH --mem=64G
 #SBATCH --output=logs/%x-%j.out
 
+# Example submit with explicit weights:
+# WEIGHTS_VITS16=/home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth WEIGHTS_VITB16=/home/cfuste/data/Models/DINOv3/dinov3_vitb16_pretrain_73cec8be.pth WEIGHTS_VITL16=/home/cfuste/data/Models/DINOv3/dinov3_vitl16_pretrain_eadcf0ff.pth sbatch --array=0-14 slurm/grid_paired_dinov3.sbatch
+
+
+
 set -euo pipefail
 module --quiet load miniforge3 || module load miniforge3
 

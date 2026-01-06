@@ -8,7 +8,7 @@ test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
 test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
 
 # results + experiment naming
-experiment_id: "2025-01-02_A2_dinopoc_dinov3-vits16_head_seg"
+experiment_id: "2026-01-05_dinov3-vits16_head_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov3/"
 task_type: "seg"
 
@@ -45,8 +45,8 @@ lora_alpha: 32
 
 # ---- training ----
 batch_size: 1
-epochs: 5
-patience: 5
+epochs: 500
+patience: 20 # early stopping
 lr: 0.00005
 weight_decay: 0.0001
 num_workers: 4

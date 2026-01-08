@@ -330,16 +330,26 @@ def main():
     # model
     backbone_cfg = resolve_backbone_cfg(cfg)
     bb = build_backbone(backbone_cfg, device=device)
-    apply_peft(bb.model, cfg, run_dir=run_dir, backbone_info=backbone_cfg, write_report=False)
-
-    bb.to(device)
-    head = SegHeadDeconv(in_ch=bb.embed_dim, num_classes=cfg["num_classes"], n_ups=4, base_ch=512).to(device)
 
     # load checkpoint (LoRA + head)
     ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt_cfg = ckpt.get("cfg", {}) or {}
+    lora_cfg_source = ckpt_cfg if ckpt_cfg else cfg
+    audit = apply_peft(
+        bb.model,
+        lora_cfg_source,
+        run_dir=run_dir,
+        backbone_info=backbone_cfg,
+        write_report=False,
+    )
+
+    bb.to(device)
+    head = SegHeadDeconv(in_ch=bb.embed_dim, num_classes=cfg["num_classes"], n_ups=4, base_ch=512).to(device)
     head.load_state_dict(ckpt["head"])
     bb_state = bb.model.state_dict()
     lora_dict = ckpt.get("backbone_lora", {})
+    if audit is not None and not lora_dict:
+        print("[eval_em_seg][warn] LoRA enabled but checkpoint missing backbone_lora weights.")
     matched = 0
     for k, v in lora_dict.items():
         if k in bb_state:

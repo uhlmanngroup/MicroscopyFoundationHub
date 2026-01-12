@@ -50,11 +50,14 @@ TOTAL_TASKS=$(( NUM_SIZES * REPEATS ))
 
 archive_slurm_log() {
   local dest_dir="$1" tag="$2"
-  local array_suffix=""
+  local base="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}.out"
+  local src="$base"
   if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
-    array_suffix="_${SLURM_ARRAY_TASK_ID}"
+    local with_suffix="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
+    if [ -f "$with_suffix" ]; then
+      src="$with_suffix"
+    fi
   fi
-  local src="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}${array_suffix}.out"
   if [ -f "$src" ]; then
     local dest="${dest_dir}/logs/${tag}_slurm.out"
     mkdir -p "$(dirname "$dest")"

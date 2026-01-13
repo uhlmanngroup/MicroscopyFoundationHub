@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -41,7 +42,8 @@ except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 
 from pandas.api.types import CategoricalDtype
 
-DINO_ORDER: List[str] = ["small", "base", "large", "giant"]
+BASE_DINO_ORDER: List[str] = ["small", "base", "large", "giant"]
+VIT_SIZE_ORDER: List[str] = ["s", "b", "l", "g"]
 USE_LORA_LABELS: List[str] = ["No LoRA", "LoRA"]
 PALETTE: Dict[str, str] = {"No LoRA": "#355c7d", "LoRA": "#c06c84"}
 
@@ -103,6 +105,30 @@ def read_json(path: Path) -> Dict:
         return json.load(fp)
 
 
+def build_dino_order(values: Iterable[str]) -> List[str]:
+    unique: List[str] = []
+    for raw in values:
+        v = str(raw).strip().lower()
+        if not v or v in unique:
+            continue
+        unique.append(v)
+
+    index_map = {v: idx for idx, v in enumerate(unique)}
+
+    def sort_key(v: str) -> Tuple[int, int, int, int]:
+        if v in BASE_DINO_ORDER:
+            return (0, BASE_DINO_ORDER.index(v), 0, index_map[v])
+        match = re.match(r"vit([sblg])(\d+)?", v)
+        if match:
+            letter = match.group(1)
+            patch = int(match.group(2) or 0)
+            letter_rank = VIT_SIZE_ORDER.index(letter) if letter in VIT_SIZE_ORDER else len(VIT_SIZE_ORDER)
+            return (1, letter_rank, patch, index_map[v])
+        return (2, 0, 0, index_map[v])
+
+    return sorted(unique, key=sort_key)
+
+
 def normalize_bool_series(series: pd.Series) -> pd.Series:
     mapping = {"true": True, "false": False, "1": True, "0": False}
     normalized = (
@@ -127,10 +153,7 @@ def prepare_frames(summary_path: Path, runs_path: Path, meta_path: Path) -> Summ
     dino_values.extend(
         runs_df["dino_size"].astype(str).str.lower().dropna().unique().tolist()
     )
-    dino_values = list(dict.fromkeys(dino_values))
-    dino_order = [v for v in DINO_ORDER if v in dino_values] + [
-        v for v in dino_values if v not in DINO_ORDER
-    ]
+    dino_order = build_dino_order(dino_values)
     dino_dtype = CategoricalDtype(categories=dino_order, ordered=True)
     lora_dtype = CategoricalDtype(categories=USE_LORA_LABELS, ordered=True)
 
@@ -216,6 +239,11 @@ def plot_summary_metric(
         print(f"[warn] No summary rows available for {metric_prefix}, skipping plot.")
         return
 
+    size_order = metadata.get("dino_order") or build_dino_order(data["dino_size"].unique())
+    hue_order = [v for v in USE_LORA_LABELS if v in data["use_lora_label"].unique().tolist()]
+    if not hue_order:
+        hue_order = data["use_lora_label"].unique().tolist()
+
     g = sns.catplot(
         data=data,
         kind="bar",
@@ -223,8 +251,8 @@ def plot_summary_metric(
         y=mean_col,
         hue="use_lora_label",
         col="dataset_title",
-        order=DINO_ORDER,
-        hue_order=USE_LORA_LABELS,
+        order=size_order,
+        hue_order=hue_order,
         palette=PALETTE,
         height=4.2,
         aspect=1.1,
@@ -265,13 +293,14 @@ def plot_run_metric_distribution(
     label: str,
     output_path: Path,
     dpi: int,
+    dino_order: Optional[List[str]] = None,
 ) -> None:
     data = run_df.dropna(subset=[metric]).copy()
     if data.empty:
         print(f"[warn] No run-level rows available for {metric}, skipping plot.")
         return
 
-    size_order = [v for v in DINO_ORDER if v in data["dino_size"].unique().tolist()]
+    size_order = dino_order or build_dino_order(data["dino_size"].unique())
     if not size_order:
         size_order = data["dino_size"].unique().tolist()
     hue_order = [v for v in USE_LORA_LABELS if v in data["use_lora_label"].unique().tolist()]
@@ -422,6 +451,7 @@ def plot_replicate_trend(
     label: str,
     output_path: Path,
     dpi: int,
+    dino_order: Optional[List[str]] = None,
 ) -> None:
     data = run_df.dropna(subset=[metric, "replicate"]).copy()
     if data.empty:
@@ -429,6 +459,10 @@ def plot_replicate_trend(
         return
 
     data["replicate"] = data["replicate"].astype(int)
+    size_order = dino_order or build_dino_order(data["dino_size"].unique())
+    hue_order = [v for v in USE_LORA_LABELS if v in data["use_lora_label"].unique().tolist()]
+    if not hue_order:
+        hue_order = data["use_lora_label"].unique().tolist()
     g = sns.relplot(
         data=data,
         kind="line",
@@ -439,8 +473,8 @@ def plot_replicate_trend(
         markers=True,
         dashes=False,
         col="dataset_title",
-        hue_order=USE_LORA_LABELS,
-        style_order=DINO_ORDER,
+        hue_order=hue_order,
+        style_order=size_order,
         palette=PALETTE,
         height=4.0,
         aspect=1.2,
@@ -460,7 +494,7 @@ def plot_replicate_trend(
             markersize=6,
             label=label_name,
         )
-        for label_name in USE_LORA_LABELS
+        for label_name in hue_order
     ]
     g.fig.legend(
         handles=handles,
@@ -489,7 +523,7 @@ def export_interactive_dashboard(bundle: SummaryBundle, output_path: Path) -> No
     html_sections: List[str] = [
         "<h1 style='font-family:Helvetica,Arial,sans-serif;'>DINO-EM summary dashboard</h1>"
     ]
-    dino_order = bundle.metadata.get("dino_order", DINO_ORDER)
+    dino_order = bundle.metadata.get("dino_order") or build_dino_order(bundle.summary["dino_size"].unique())
     category_orders = {"dino_size": dino_order, "use_lora_label": USE_LORA_LABELS}
 
     for metric, label in (("foreground_iou", "Foreground IoU"), ("mean_iou", "Mean IoU")):
@@ -577,6 +611,7 @@ def main() -> None:
             label,
             output_dir / f"runs_{metric}.png",
             args.dpi,
+            bundle.metadata.get("dino_order"),
         )
 
     for metric, label in TREND_METRICS:
@@ -586,6 +621,7 @@ def main() -> None:
             label,
             output_dir / f"trend_{metric}.png",
             args.dpi,
+            bundle.metadata.get("dino_order"),
         )
 
     if args.interactive_html:

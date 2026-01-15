@@ -337,7 +337,11 @@ class SegTrainer:
 
                 self.optimizer.zero_grad(set_to_none=True)
 
-                out = self.backbone(imgs)
+                if self.lora_enabled:
+                    out = self.backbone(imgs)
+                else:
+                    with torch.no_grad():
+                        out = self.backbone(imgs)
                 feats = patch_tokens_to_grid(out)
                 logits = self.head(feats, out_hw=masks.shape[-2:])
 

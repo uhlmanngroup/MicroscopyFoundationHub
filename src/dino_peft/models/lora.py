@@ -109,8 +109,14 @@ class LoRAMultiheadAttention(nn.Module):
         out_proj = self.out_proj
         out_proj_weight = out_proj.weight
         out_proj_bias = getattr(out_proj, "bias", None)
-        if out_proj_bias is None and hasattr(out_proj, "base_linear"):
-            out_proj_bias = out_proj.base_linear.bias
+        if isinstance(out_proj_bias, bool) or out_proj_bias is None:
+            if hasattr(out_proj, "base_linear"):
+                out_proj_bias = out_proj.base_linear.bias
+            else:
+                out_proj_bias = None
+        if isinstance(out_proj, LoRALinear) and out_proj.lora_A is not None:
+            delta_out = out_proj.lora_B.weight @ out_proj.lora_A.weight
+            out_proj_weight = out_proj_weight + delta_out * out_proj.scaling
 
         attn_output, attn_weights = F.multi_head_attention_forward(
             query,

@@ -7,7 +7,7 @@ test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinope
 test_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/masks"
 
 # results + experiment naming (edit before each run)
-experiment_id: "2026-01-10_paired_openclip_vitl14_lora-r8_seg"
+experiment_id: "2026-01-15_paired_openclip_vitl14_lora-r8_seg"
 results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
 task_type: "seg"
 
@@ -15,7 +15,7 @@ task_type: "seg"
 backbone:
   name: openclip
   model: "ViT-L-14"
-  pretrained: "laion2b_s32b_b79k"
+  pretrained: "laion2b_s32b_b82k"
   weights: ""
   preprocess:
     preset: em
@@ -47,7 +47,7 @@ lora:
 
 # ---- training ----
 batch_size: 1
-epochs: 2
+epochs: 1
 patience: 5
 lr: 0.00005
 weight_decay: 0.0001

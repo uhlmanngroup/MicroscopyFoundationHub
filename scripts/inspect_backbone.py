@@ -25,6 +25,8 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Max module depth to include in the tree summary.",
     )
+    ap.add_argument("--image-size-h", type=int, default=None, help="Optional dummy input height.")
+    ap.add_argument("--image-size-w", type=int, default=None, help="Optional dummy input width.")
     ap.add_argument(
         "--respect-config",
         action="store_true",
@@ -145,6 +147,22 @@ def main() -> None:
     print(f"[inspect] module_tree={tree_path}")
     print(f"[inspect] lora_targets={inspect_path}")
     print(f"[inspect] lora_report={run_dir / 'lora_targets.json'}")
+
+    if args.image_size_h and args.image_size_w:
+        h = int(args.image_size_h)
+        w = int(args.image_size_w)
+        if h % backbone.patch_size != 0 or w % backbone.patch_size != 0:
+            raise ValueError(
+                f"Dummy input size must be divisible by patch_size={backbone.patch_size}."
+            )
+        dummy = torch.randn(1, 3, h, w, device=device)
+        output = backbone(dummy)
+        if output.patch_tokens.shape[1] != output.grid_size[0] * output.grid_size[1]:
+            raise RuntimeError("Patch token count does not match grid size.")
+        print(
+            "[inspect] forward_ok "
+            f"patch_tokens={tuple(output.patch_tokens.shape)} grid={output.grid_size}"
+        )
 
 
 if __name__ == "__main__":

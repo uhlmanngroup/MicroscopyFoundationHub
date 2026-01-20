@@ -1,0 +1,8 @@
+timestamp: 2026-01-19T13:12:33
+git_commit: 1d646b27e54941a4469eeb1f0918a862d3e038d7
+task_type: ablation_paired_balance_dinov2
+device: cuda
+img_size: {'mode': 'longest_edge', 'target': 1022, 'patch_multiple': 14, 'rounding': 'floor'}
+backbone_name: dinov2
+backbone_variant: base
+preprocess_preset: em

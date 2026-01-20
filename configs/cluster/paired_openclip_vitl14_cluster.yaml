@@ -8,9 +8,9 @@ test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
 test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
 
 # results + experiment naming
-experiment_id: "2026-01-10_dinopoc_openclip_vitl14_lora-r16_seg"
-results_root: "/home/cfuste/data/DINO-LoRA"
-task_type: "seg"
+experiment_id: "2026-01-15_openclip_vitl14_NOlora-r16_seg"
+results_root: "/home/cfuste/data/DINO-LoRA/openclip/seg/"
+task_type: "paired"
 
 # stitched dataset already shares a naming scheme between images/masks
 dataset:
@@ -23,7 +23,7 @@ dataset:
 backbone:
   name: openclip
   model: "ViT-L-14"
-  pretrained: "laion2b_s32b_b79k"
+  pretrained: "laion2b_s32b_b82k"
   weights: ""
   preprocess:
     preset: em
@@ -37,11 +37,11 @@ num_classes: 2
 
 
 # ---- LoRA ----
-use_lora: true
+use_lora: false
 lora_rank: 16
 lora_alpha: 32
 lora:
-  enabled: true
+  enabled: false
   target_policy: vit_attention_only
   layer_selection: all
   exclude: [head, decoder, seg_head]
@@ -49,7 +49,7 @@ lora:
 
 # ---- training ----
 batch_size: 2
-epochs: 80
+epochs: 1000
 patience: 20
 lr: 0.00005
 weight_decay: 0.0001

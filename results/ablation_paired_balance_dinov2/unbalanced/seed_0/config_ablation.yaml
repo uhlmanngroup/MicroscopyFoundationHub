@@ -1,0 +1,73 @@
+train_img_dir: /home/cfuste/data/datasets/Lucchi++/Train_In
+train_mask_dir: /home/cfuste/data/datasets/Lucchi++/Train_Out
+test_img_dir: /home/cfuste/data/datasets/Lucchi++/Test_In
+test_mask_dir: /home/cfuste/data/datasets/Lucchi++/Test_Out
+experiment_id: unbalanced/seed_0
+results_root: results
+task_type: ablation_paired_balance_dinov2
+dataset: &id001
+  type: lucchi
+  params:
+    recursive: false
+    image_prefix: mask
+    zfill_width: 4
+backbone:
+  name: dinov2
+  variant: base
+  load_backend: torchhub
+  weights: null
+  repo_dir: null
+  preprocess:
+    preset: em
+dino_size: base
+img_size:
+  mode: longest_edge
+  target: 1022
+  patch_multiple: 14
+  rounding: floor
+num_classes: 2
+use_lora: false
+lora_targets:
+- attn.qkv
+- attn.proj
+lora_rank: 16
+lora_alpha: 32
+batch_size: 2
+epochs: 1000
+patience: 20
+lr: 5.0e-05
+weight_decay: 0.0001
+num_workers: 0
+device: auto
+amp: false
+loss: dice
+class_weights:
+- 1.0
+- 15.0
+tversky_alpha: 0.7
+tversky_beta: 0.3
+tversky_eps: 1.0e-06
+tversky_weight: 0.6
+clip_grad_norm: 1.0
+binarize: true
+binarize_threshold: 128
+seed: 0
+lora:
+  enabled: false
+val_ratio: 0.1
+split_seed: 42
+paired_lucchi:
+  train_img_dir: /home/cfuste/data/datasets/Lucchi++/Train_In
+  train_mask_dir: /home/cfuste/data/datasets/Lucchi++/Train_Out
+  test_img_dir: /home/cfuste/data/datasets/Lucchi++/Test_In
+  test_mask_dir: /home/cfuste/data/datasets/Lucchi++/Test_Out
+  dataset: *id001
+paired_vnc:
+  train_img_dir: /home/cfuste/data/datasets/Droso/Train_In
+  train_mask_dir: /home/cfuste/data/datasets/Droso/Train_Out
+  test_img_dir: /home/cfuste/data/datasets/Droso/Test_In
+  test_mask_dir: /home/cfuste/data/datasets/Droso/Test_Out
+  dataset:
+    type: droso
+    params:
+      recursive: true

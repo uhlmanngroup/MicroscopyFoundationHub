@@ -23,7 +23,7 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 
 BASE_CFG="configs/cluster/paired_openclip_vitl14_cluster.yaml"
 MODEL=${MODEL:-"ViT-L-14"}
-PRETRAINED=${PRETRAINED:-"laion2b_s32b_b79k"}
+PRETRAINED=${PRETRAINED:-"laion2b_s32b_b82k"}
 WEIGHTS=${WEIGHTS:-}
 EPOCHS=${EPOCHS:-}
 BATCH_SIZE=${BATCH_SIZE:-}

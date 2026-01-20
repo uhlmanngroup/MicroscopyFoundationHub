@@ -1,0 +1,73 @@
+amp: false
+backbone:
+  load_backend: torchhub
+  name: dinov2
+  preprocess:
+    preset: em
+  repo_dir: null
+  variant: base
+  weights: null
+batch_size: 2
+binarize: true
+binarize_threshold: 128
+class_weights:
+- 1.0
+- 15.0
+clip_grad_norm: 1.0
+dataset: &id001
+  params:
+    image_prefix: mask
+    recursive: false
+    zfill_width: 4
+  type: lucchi
+device: auto
+dino_size: base
+epochs: 1000
+experiment_id: balanced/seed_4
+img_size:
+  mode: longest_edge
+  patch_multiple: 14
+  rounding: floor
+  target: 1022
+lora:
+  enabled: false
+lora_alpha: 32
+lora_rank: 16
+lora_targets:
+- attn.qkv
+- attn.proj
+loss: dice
+lr: 5.0e-05
+num_classes: 2
+num_workers: 0
+paired_lucchi:
+  dataset: *id001
+  test_img_dir: /home/cfuste/data/datasets/Lucchi++/Test_In
+  test_mask_dir: /home/cfuste/data/datasets/Lucchi++/Test_Out
+  train_img_dir: /home/cfuste/data/datasets/Lucchi++/Train_In
+  train_mask_dir: /home/cfuste/data/datasets/Lucchi++/Train_Out
+paired_vnc:
+  dataset:
+    params:
+      recursive: true
+    type: droso
+  test_img_dir: /home/cfuste/data/datasets/Droso/Test_In
+  test_mask_dir: /home/cfuste/data/datasets/Droso/Test_Out
+  train_img_dir: /home/cfuste/data/datasets/Droso/Train_In
+  train_mask_dir: /home/cfuste/data/datasets/Droso/Train_Out
+patience: 20
+results_root: results
+seed: 4
+split_seed: 42
+task_type: ablation_paired_balance_dinov2
+test_img_dir: /home/cfuste/data/datasets/Lucchi++/Test_In
+test_mask_dir: /home/cfuste/data/datasets/Lucchi++/Test_Out
+train_img_dir: /home/cfuste/data/datasets/Lucchi++/Train_In
+train_mask_dir: /home/cfuste/data/datasets/Lucchi++/Train_Out
+tversky_alpha: 0.7
+tversky_beta: 0.3
+tversky_eps: 1.0e-06
+tversky_weight: 0.6
+use_lora: false
+val_ratio: 0.1
+weight_decay: 0.0001

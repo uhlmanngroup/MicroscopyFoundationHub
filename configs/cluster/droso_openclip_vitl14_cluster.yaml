@@ -8,8 +8,8 @@ test_img_dir:    "/home/cfuste/data/datasets/Droso/Test_In"
 test_mask_dir:   "/home/cfuste/data/datasets/Droso/Test_Out"
 
 # results + experiment naming
-experiment_id: "2026-01-10_droso_openclip_vitl14_lora-r16_seg"
-results_root: "/home/cfuste/data/DINO-LoRA/seg/droso-openclip"
+experiment_id: "2026-01-15_droso_openclip_vitl14_lora-r16_seg"
+results_root: "/home/cfuste/data/DINO-LoRA/openclip/"
 task_type: "seg"
 
 # dataset pairing (drosophila images share numeric stems with their masks)
@@ -46,8 +46,8 @@ lora:
   compatibility_mode: true
 
 # ---- training ----
-batch_size: 1
-epochs: 10
+batch_size: 4
+epochs: 1000
 patience: 20
 lr: 0.00005
 weight_decay: 0.0001

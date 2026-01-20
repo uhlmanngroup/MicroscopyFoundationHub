@@ -1,0 +1,20 @@
+{
+  "paired_balance": {
+    "lucchi_iouf": 0.7333125576522335,
+    "macro_iouf": 0.7524014837285079,
+    "seed": 1,
+    "variant": "unbalanced",
+    "vnc_iouf": 0.7714904098047823
+  },
+  "train": {
+    "best_epoch": 171,
+    "best_train_loss": 0.0034049920192578942,
+    "best_val_loss": 0.02066228124830458,
+    "last_epoch": 191,
+    "last_train_loss": 0.0029572237555573625,
+    "last_val_loss": 0.021098913417922124,
+    "max_epochs": 1000,
+    "patience": 20,
+    "seed": 1
+  }
+}

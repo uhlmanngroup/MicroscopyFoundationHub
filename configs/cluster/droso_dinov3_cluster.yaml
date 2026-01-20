@@ -7,9 +7,9 @@ test_img_dir:    "/home/cfuste/data/datasets/Droso/Test_In"
 test_mask_dir:   "/home/cfuste/data/datasets/Droso/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
-experiment_id: "2026-01-10_A2_droso-only_dinov3-vits16_seg"
-results_root: "/home/cfuste/data/DINO-LoRA/seg/droso"
-task_type: "seg"
+experiment_id: "2026-01-10_A2_droso-only_dinov3_seg"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov3/seg/"
+task_type: "droso-lora"
 
 # dataset pairing (Drosophila images share numeric stems with their masks)
 dataset:
@@ -22,7 +22,7 @@ backbone:
   name: dinov3
   variant: vits16
   load_backend: torchhub
-  repo_dir: /home/cfuste/data/GitHub/dinov3
+  repo_dir: /home/cfuste/GitHub/dinov3
   weights: /home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
   preprocess:
     preset: em
@@ -35,11 +35,11 @@ img_size:
 num_classes: 2
 
 # ---- LoRA ----
-use_lora: false
+use_lora: true
 lora_rank: 16
 lora_alpha: 32
 lora:
-  enabled: false
+  enabled: true
   target_policy: vit_attention_only
   layer_selection: all
   exclude: [head, decoder, seg_head]

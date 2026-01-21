@@ -30,6 +30,7 @@ NUM_WORKERS=${NUM_WORKERS:-}
 AMP=${AMP:-}
 USE_LORA=${USE_LORA:-}
 RUN_TAG=${RUN_TAG:-lucchigrid-dinov3-${SLURM_JOB_ID:-manual}}
+SEED=${SEED:-}
 REPEATS=${REPEATS:-5}
 WEIGHTS_VITS16=${WEIGHTS_VITS16:-}
 WEIGHTS_VITB16=${WEIGHTS_VITB16:-}
@@ -64,10 +65,10 @@ archive_slurm_log() {
 }
 
 prepare_cfg() {
-  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" use_lora="$7" tag="$8" backbone_name="$9" weights_override="${10}"
-  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$use_lora" "$tag" "$backbone_name" "$weights_override" <<'PY'
+  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" use_lora="$7" tag="$8" backbone_name="$9" weights_override="${10}" seed="${11}"
+  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$use_lora" "$tag" "$backbone_name" "$weights_override" "$seed" <<'PY'
 import sys, yaml, tempfile, pathlib, re
-base, size, epochs, batch, workers, amp, use_lora, tag, backbone_name, weights_override = sys.argv[1:]
+base, size, epochs, batch, workers, amp, use_lora, tag, backbone_name, weights_override, seed = sys.argv[1:]
 cfg = yaml.safe_load(open(base))
 cfg["dino_size"] = size
 backbone = cfg.get("backbone") or {}
@@ -80,6 +81,8 @@ else:
     if isinstance(base_weights, str) and size and "vits16" in base_weights.lower():
         backbone["weights"] = re.sub("vits16", size, base_weights, flags=re.IGNORECASE)
 cfg["backbone"] = backbone
+if seed:
+    cfg["seed"] = int(seed)
 if epochs:
     cfg["epochs"] = max(1, int(epochs))
 if batch:
@@ -143,7 +146,7 @@ run_config() {
     vitb16) weights_override="$WEIGHTS_VITB16" ;;
     vitl16) weights_override="$WEIGHTS_VITL16" ;;
   esac
-  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME" "$weights_override")
+  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME" "$weights_override" "$SEED")
   runtime_cfg="${prep[0]}"
   run_dir="${prep[1]}"
   echo "[grid size=${size_clean} rep=${rep_id}] batch=$batch_val lora=$USE_LORA cfg=$runtime_cfg"

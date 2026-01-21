@@ -30,6 +30,7 @@ NUM_WORKERS=${NUM_WORKERS:-}
 AMP=${AMP:-}
 USE_LORA=${USE_LORA:-}
 RUN_TAG=${RUN_TAG:-pairedgrid-dinov2-${SLURM_JOB_ID:-manual}}
+SEED=${SEED:-}
 REPEATS=${REPEATS:-5}
 
 read -r -a SIZE_LIST <<< "$DINO_SIZES"
@@ -58,16 +59,18 @@ archive_slurm_log() {
 }
 
 prepare_cfg() {
-  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" use_lora="$7" tag="$8" backbone_name="$9"
-  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$use_lora" "$tag" "$backbone_name" <<'PY'
+  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" use_lora="$7" tag="$8" backbone_name="$9" seed="${10}"
+  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$use_lora" "$tag" "$backbone_name" "$seed" <<'PY'
 import sys, yaml, tempfile, pathlib, re
-base, size, epochs, batch, workers, amp, use_lora, tag, backbone_name = sys.argv[1:]
+base, size, epochs, batch, workers, amp, use_lora, tag, backbone_name, seed = sys.argv[1:]
 cfg = yaml.safe_load(open(base))
 cfg["dino_size"] = size
 backbone = cfg.get("backbone") or {}
 backbone["name"] = backbone_name or backbone.get("name", "dinov2")
 backbone["variant"] = size
 cfg["backbone"] = backbone
+if seed:
+    cfg["seed"] = int(seed)
 if epochs:
     cfg["epochs"] = max(1, int(epochs))
 if batch:
@@ -122,7 +125,7 @@ run_config() {
   local size_tag="${RUN_TAG}_rep${rep_id}_s$((size_idx + 1))_${size_clean}"
   local batch_val
   batch_val="$(get_batch_for_size "$size_clean")"
-  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME")
+  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME" "$SEED")
   runtime_cfg="${prep[0]}"
   run_dir="${prep[1]}"
   echo "[grid size=${size_clean} rep=${rep_id}] batch=$batch_val lora=$USE_LORA cfg=$runtime_cfg"

@@ -19,7 +19,7 @@ lora:
   compatibility_mode: true
 
 # Output CSV path (relative to repo root if not absolute).
-output_csv: outputs/param_counts.csv
+output_csv: /home/cfuste/data/DINO-LoRA/summary/param_counts.csv
 
 backbones:
   # DINOv2 sizes
@@ -36,18 +36,18 @@ backbones:
   - name: dinov3
     variant: vits16
     load_backend: torchhub
-    repo_dir: /path/to/dinov3
-    weights: /path/to/dinov3_vits16.pth
+    repo_dir: /home/cfuste/GitHub/dinov3
+    weights: /home/cfuste/data/models/dinov3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
   - name: dinov3
     variant: vitb16
     load_backend: torchhub
-    repo_dir: /path/to/dinov3
-    weights: /path/to/dinov3_vitb16.pth
+    repo_dir: /home/cfuste/GitHub/dinov3
+    weights: /home/cfuste/data/models/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
   - name: dinov3
     variant: vitl16
     load_backend: torchhub
-    repo_dir: /path/to/dinov3
-    weights: /path/to/dinov3_vitl16.pth
+    repo_dir: /home/cfuste/GitHub/dinov3
+    weights: /home/cfuste/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
 
   # OpenCLIP sizes (vision tower only)
   - name: openclip

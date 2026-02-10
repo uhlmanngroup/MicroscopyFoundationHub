@@ -18,7 +18,7 @@ export PYTHONUNBUFFERED=1
 export PYTHONPATH="$PWD/src"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 
-CFG=${CFG:-configs/analysis/param_counts.yaml}
+CFG=${CFG:-configs/cluster/param_counts.yaml}
 OUT=${OUT:-}
 DEVICE=${DEVICE:-}
 SKIP_FAILURES=${SKIP_FAILURES:-}

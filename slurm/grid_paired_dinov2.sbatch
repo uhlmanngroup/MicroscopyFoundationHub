@@ -1,10 +1,10 @@
 #!/usr/bin/bash -l
 #SBATCH --job-name=dino-grid-paired-dinov2
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
 #SBATCH --output=logs/%x-%j.out
 
 set -euo pipefail

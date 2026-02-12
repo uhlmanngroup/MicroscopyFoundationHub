@@ -384,6 +384,7 @@ class SegTrainer:
             avg_train = running / max(1, len(self.train_loader))
 
             # VAL
+            self.backbone.eval()
             self.head.eval()
             val_loss = 0.0
             fg_gt_total = fg_pred_total = 0

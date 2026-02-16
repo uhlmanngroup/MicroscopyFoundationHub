@@ -153,6 +153,11 @@ class OpenCLIPAdapter(BackboneAdapter):
             return
 
         info = self._pos_embed_info or self._resolve_pos_embed()
+        # Do not mutate a trainable positional-embedding parameter shape at runtime.
+        # In full fine-tuning this breaks autograd (shape expected by the parameter
+        # can diverge from the resized token grid).
+        if info["is_param"] and getattr(info["tensor"], "requires_grad", False):
+            return
         pos_embed = info["tensor"]
         has_cls = info["has_cls"]
         pos_embed_dim = pos_embed.dim()
@@ -289,7 +294,8 @@ class OpenCLIPAdapter(BackboneAdapter):
             param = dict(self.model.named_parameters(recurse=True)).get(name)
             if param is None:
                 raise RuntimeError(f"OpenCLIP pos_embed parameter '{name}' not found.")
-            param.data = new_tensor
+            with torch.no_grad():
+                param.data = new_tensor.detach()
             info["tensor"] = param
             return
         buffer = dict(self.model.named_buffers(recurse=True)).get(name)

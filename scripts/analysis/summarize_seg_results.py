@@ -23,6 +23,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import yaml
 
 from dino_peft.backbones import resolve_backbone_cfg
+from dino_peft.models.lora import resolve_full_finetune
 METRIC_KEYS: Tuple[str, ...] = (
     "mean_dice",
     "mean_iou",
@@ -42,6 +43,8 @@ class RunRecord:
     backbone_variant: Optional[str]
     dino_size: str
     use_lora: bool
+    full_finetune: bool
+    training_mode: str
     replicate: Optional[int]
     seed: Optional[int]
     loss: Optional[str]
@@ -124,6 +127,16 @@ def size_rank(size: Optional[str]) -> int:
     return order.get((size or "").lower(), len(order))
 
 
+def infer_training_mode(use_lora: bool, full_finetune: bool) -> str:
+    if use_lora and full_finetune:
+        return "invalid_lora_and_fullft"
+    if use_lora:
+        return "lora"
+    if full_finetune:
+        return "full_finetune"
+    return "head_only"
+
+
 def collect_runs(
     root: Path, summary_dir: Path, metrics_filename: str, config_candidates: Sequence[str]
 ) -> List[RunRecord]:
@@ -160,6 +173,11 @@ def collect_runs(
                 backbone_variant=backbone_cfg.get("variant"),
                 dino_size=str(backbone_cfg.get("variant", cfg.get("dino_size", "unknown"))).lower(),
                 use_lora=bool(cfg.get("use_lora", False)),
+                full_finetune=bool(resolve_full_finetune(cfg)),
+                training_mode=infer_training_mode(
+                    use_lora=bool(cfg.get("use_lora", False)),
+                    full_finetune=bool(resolve_full_finetune(cfg)),
+                ),
                 replicate=extract_replicate(run_dir.name),
                 seed=train_metrics.get("seed"),
                 loss=cfg.get("loss"),
@@ -188,12 +206,12 @@ def compute_stats(values: Iterable[float]) -> Tuple[Optional[float], Optional[fl
 
 
 def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
-    grouped: Dict[Tuple[str, bool, str], Dict[str, List[float]]] = {}
-    counts: Dict[Tuple[str, bool, str], int] = {}
+    grouped: Dict[Tuple[str, bool, bool, str], Dict[str, List[float]]] = {}
+    counts: Dict[Tuple[str, bool, bool, str], int] = {}
 
     for record in run_records:
         ds_type = (record.dataset_type or "unknown").lower()
-        key = (ds_type, record.use_lora, record.dino_size)
+        key = (ds_type, record.use_lora, record.full_finetune, record.dino_size)
         if key not in grouped:
             grouped[key] = {metric: [] for metric in METRIC_KEYS}
             counts[key] = 0
@@ -203,16 +221,26 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
             if isinstance(value, (int, float)):
                 grouped[key][metric].append(float(value))
 
-    def _sort_key(item: Tuple[Tuple[str, bool, str], Dict[str, List[float]]]):
-        (ds_type, use_lora, size), _ = item
-        return (ds_type, int(use_lora), size_rank(size), size)
+    mode_order = {
+        "head_only": 0,
+        "lora": 1,
+        "full_finetune": 2,
+        "invalid_lora_and_fullft": 3,
+    }
+
+    def _sort_key(item: Tuple[Tuple[str, bool, bool, str], Dict[str, List[float]]]):
+        (ds_type, use_lora, full_finetune, size), _ = item
+        mode = infer_training_mode(use_lora, full_finetune)
+        return (ds_type, mode_order.get(mode, 99), size_rank(size), size)
 
     aggregates: List[Dict] = []
     for key, metric_lists in sorted(grouped.items(), key=_sort_key):
-        dataset_type, use_lora, size = key
+        dataset_type, use_lora, full_finetune, size = key
         row: Dict[str, Optional[float]] = {
             "dataset_type": dataset_type,
             "use_lora": use_lora,
+            "full_finetune": full_finetune,
+            "training_mode": infer_training_mode(use_lora, full_finetune),
             "dino_size": size,
             "num_runs": counts.get(key, 0),
         }
@@ -241,6 +269,8 @@ def serialize_run_record(record: RunRecord) -> Dict[str, object]:
         "backbone_variant": record.backbone_variant,
         "dino_size": record.dino_size,
         "use_lora": record.use_lora,
+        "full_finetune": record.full_finetune,
+        "training_mode": record.training_mode,
         "replicate": record.replicate,
         "seed": record.seed,
         "loss": record.loss,
@@ -280,6 +310,8 @@ def main() -> None:
         "rel_run_dir",
         "experiment_id",
         "use_lora",
+        "full_finetune",
+        "training_mode",
         "backbone_name",
         "backbone_variant",
         "dino_size",
@@ -298,6 +330,8 @@ def main() -> None:
     summary_fieldnames = [
         "dataset_type",
         "use_lora",
+        "full_finetune",
+        "training_mode",
         "dino_size",
         "num_runs",
         "mean_dice_mean",

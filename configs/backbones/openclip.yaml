@@ -6,3 +6,5 @@ backbone:
   weights: ""
   preprocess:
     preset: em
+
+clahe_norm: false

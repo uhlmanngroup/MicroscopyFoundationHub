@@ -316,7 +316,11 @@ def _run_variant(variant, seed, base_cfg, out_root: Path | None, epochs_override
     device = trainer.device
     backbone, head = _load_eval_model(cfg, ckpt_path, device)
 
-    test_ds = _build_paired_dataset(cfg, "test", em_seg_transforms())
+    test_ds = _build_paired_dataset(
+        cfg,
+        "test",
+        em_seg_transforms(clahe_norm=bool(cfg.get("clahe_norm", False))),
+    )
     metrics = _eval_iouf_by_domain(backbone, head, test_ds, device, cfg["num_workers"])
     metrics.update({"variant": variant, "seed": int(seed)})
 

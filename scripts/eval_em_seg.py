@@ -400,7 +400,7 @@ def main():
     bb.to(device)
 
     # dataset (test split from eval cfg)
-    t = em_seg_transforms()
+    t = em_seg_transforms(clahe_norm=bool(eval_cfg.get("clahe_norm", False)))
     ds = build_dataset_from_cfg(eval_cfg, split="test", transform=t)
 
     loader = DataLoader(

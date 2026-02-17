@@ -76,3 +76,5 @@ clip_grad_norm: 1.0   # global grad clip
 # ---- export / viz (kept; argmax is used for CE path) ----
 binarize: true
 binarize_threshold: 128
+
+clahe_norm: false

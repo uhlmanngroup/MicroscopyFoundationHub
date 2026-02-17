@@ -81,3 +81,5 @@ binarize_threshold: 128
 # ---- evaluation previews ----
 eval_preview_mode: all   # all|random
 eval_preview_cols: 4
+
+clahe_norm: false

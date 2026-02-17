@@ -31,6 +31,7 @@ class PairedDirsSegDataset(Dataset):
     Output:
       - image: Tensor CHW (after transform if provided)
       - mask : LongTensor HW (values in {0..K-1} or {0,1} if binarize)
+      - joint_transform: optional callable(image, mask) -> (image, mask)
     """
     def __init__(
         self,
@@ -45,10 +46,12 @@ class PairedDirsSegDataset(Dataset):
         mask_prefix="",
         mask_suffix="",
         recursive=False,
+        joint_transform=None,
     ):
         self.image_dir = Path(image_dir)
         self.mask_dir  = Path(mask_dir)
         self.transform = transform
+        self.joint_transform = joint_transform
         self.to_rgb    = bool(to_rgb)
         self.binarize  = bool(binarize)
         self.thresh    = int(binarize_threshold)
@@ -144,6 +147,9 @@ class PairedDirsSegDataset(Dataset):
                 # fallback: take first channel if convert fails (e.g., unusual mode)
                 mask = mask.split()[0]
         mask = mask.resize(target_wh, Image.NEAREST)
+
+        if self.joint_transform:
+            img, mask = self.joint_transform(img, mask)
 
         # transforms
         if self.transform:

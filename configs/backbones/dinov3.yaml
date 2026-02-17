@@ -16,3 +16,5 @@ backbone:
       rounding: floor
 
 # Remember to update img_size.patch_multiple=16 in segmentation configs too.
+
+clahe_norm: false

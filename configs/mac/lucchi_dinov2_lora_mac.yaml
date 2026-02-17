@@ -65,6 +65,7 @@ device: auto
 amp: true            # first run: stability check without AMP
 val_ratio: 0.1
 split_seed: 42
+data_augmentation: false
 
 # ---- loss (CE + Tversky on foreground) ----
 loss: dice      # ce, dice, ce_tversky 
@@ -80,3 +81,5 @@ clip_grad_norm: 1.0   # global grad clip
 # ---- export / viz (kept; argmax is used for CE path) ----
 binarize: true
 binarize_threshold: 128
+
+clahe_norm: false

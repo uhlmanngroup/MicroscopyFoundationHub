@@ -21,3 +21,5 @@ domain_analysis:
   json_name: "metrics.json"
   csv_name: "metrics.csv"
   use_run_dir_metrics: false
+
+clahe_norm: false

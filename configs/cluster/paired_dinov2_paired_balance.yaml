@@ -66,3 +66,5 @@ tversky_weight: 0.6
 # ---- export / viz ----
 binarize: true
 binarize_threshold: 128
+
+clahe_norm: false

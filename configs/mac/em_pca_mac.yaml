@@ -20,3 +20,5 @@ umap:
   metric: euclidean  # or cosine
   seed: 0
   output_path: ...  # optional override; else derive from input
+
+clahe_norm: false

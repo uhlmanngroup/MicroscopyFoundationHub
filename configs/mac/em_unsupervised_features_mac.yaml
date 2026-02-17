@@ -31,3 +31,5 @@ runtime:
 
   # "auto" = use cuda if available else cpu. You can also force "cpu" or "cuda".
   device: "auto"
+
+clahe_norm: false

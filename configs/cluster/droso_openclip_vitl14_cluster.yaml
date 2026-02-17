@@ -36,6 +36,7 @@ num_classes: 2
 
 # ---- LoRA ----
 use_lora: false
+full_finetune: true
 lora_rank: 16
 lora_alpha: 32
 lora:
@@ -73,3 +74,5 @@ clip_grad_norm: 1.0
 # ---- export / viz ----
 binarize: true
 binarize_threshold: 128
+
+clahe_norm: false

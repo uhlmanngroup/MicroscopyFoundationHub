@@ -7,3 +7,5 @@ backbone:
   repo_dir: null
   preprocess:
     preset: em
+
+clahe_norm: false

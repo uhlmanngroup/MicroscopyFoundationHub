@@ -36,6 +36,7 @@ dataset:
 
 # ---- LoRA / head ----
 use_lora: false
+full_finetune: true
 lora_rank: 8
 lora_alpha: 32
 lora:
@@ -71,3 +72,5 @@ clip_grad_norm: 1.0
 # ---- export / viz ----
 binarize: true
 binarize_threshold: 128
+
+clahe_norm: false

@@ -99,6 +99,8 @@ class SegTrainer:
 
         self.data_augmentation = bool(self.cfg.get("data_augmentation", False))
         self.cfg["data_augmentation"] = self.data_augmentation
+        self.clahe_norm = bool(self.cfg.get("clahe_norm", False))
+        self.cfg["clahe_norm"] = self.clahe_norm
         self.aug_shift_percent = 0.05
         self.aug_policy = {
             "enabled": self.data_augmentation,
@@ -151,6 +153,7 @@ class SegTrainer:
                 "preprocess_preset": preprocess_cfg.get("preset"),
                 "data_augmentation": self.data_augmentation,
                 "augmentation_policy": self.aug_policy,
+                "clahe_norm": self.clahe_norm,
             },
         )
 
@@ -193,8 +196,8 @@ class SegTrainer:
                 **kwargs,
             )
 
-        t_train = em_seg_transforms()   # deterministic pipeline (resize handled in dataset)
-        t_val   = em_seg_transforms()
+        t_train = em_seg_transforms(clahe_norm=self.clahe_norm)   # deterministic pipeline (resize handled in dataset)
+        t_val   = em_seg_transforms(clahe_norm=self.clahe_norm)
         j_train = em_seg_joint_augment(
             enabled=self.data_augmentation,
             max_shift_percent=self.aug_shift_percent,
@@ -535,5 +538,6 @@ class SegTrainer:
                 "augmentation_policy": self.aug_policy,
                 "augmented_images_last_epoch": int(augmented_images_last_epoch),
                 "augmented_images_total": int(augmented_images_total),
+                "clahe_norm": self.clahe_norm,
             },
         )

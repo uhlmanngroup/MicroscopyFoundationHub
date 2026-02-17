@@ -71,3 +71,5 @@ clip_grad_norm: 1.0
 # ---- export / viz ----
 binarize: true
 binarize_threshold: 128
+
+clahe_norm: false

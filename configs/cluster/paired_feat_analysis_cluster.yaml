@@ -47,3 +47,5 @@ umap:
   n_components: 2
   metric: "euclidean"
   seed: 0
+
+clahe_norm: false

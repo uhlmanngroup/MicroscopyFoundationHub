@@ -11,11 +11,94 @@ IMAGENET_STD  = [0.229, 0.224, 0.225]
 OPENCLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
 OPENCLIP_STD = [0.26862954, 0.26130258, 0.27577711]
 
-def em_seg_transforms(img_size=(308,308)):
-    return T.Compose([
-        T.ToTensor(),
-        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-    ])
+def _clahe_gray_uint8(gray: np.ndarray, clip_limit: float, tiles: tuple[int, int]) -> np.ndarray:
+    if gray.ndim != 2 or gray.dtype != np.uint8:
+        raise ValueError("CLAHE expects a uint8 grayscale image.")
+    h, w = gray.shape
+    ty, tx = tiles
+    if h == 0 or w == 0:
+        return gray
+    y_edges = np.linspace(0, h, ty + 1, dtype=int)
+    x_edges = np.linspace(0, w, tx + 1, dtype=int)
+    out = np.empty_like(gray)
+    bins = 256
+
+    for yi in range(ty):
+        y0, y1 = int(y_edges[yi]), int(y_edges[yi + 1])
+        if y1 <= y0:
+            continue
+        for xi in range(tx):
+            x0, x1 = int(x_edges[xi]), int(x_edges[xi + 1])
+            if x1 <= x0:
+                continue
+            tile = gray[y0:y1, x0:x1]
+            hist = np.bincount(tile.reshape(-1), minlength=bins).astype(np.int64)
+
+            tile_area = int(tile.size)
+            clip_th = max(1, int(round(clip_limit * tile_area / bins)))
+            excess = np.maximum(hist - clip_th, 0)
+            hist = np.minimum(hist, clip_th)
+            n_excess = int(excess.sum())
+            if n_excess > 0:
+                base = n_excess // bins
+                rem = n_excess % bins
+                hist += base
+                if rem > 0:
+                    hist[:rem] += 1
+
+            cdf = hist.cumsum()
+            nz = np.flatnonzero(cdf)
+            if nz.size == 0:
+                out[y0:y1, x0:x1] = tile
+                continue
+            cdf_min = int(cdf[nz[0]])
+            denom = int(tile_area - cdf_min)
+            if denom <= 0:
+                lut = np.arange(256, dtype=np.uint8)
+            else:
+                lut = np.clip(((cdf - cdf_min) * 255.0) / denom, 0, 255).astype(np.uint8)
+            out[y0:y1, x0:x1] = lut[tile]
+    return out
+
+
+class _EMSubtleCLAHE:
+    """
+    Subtle CLAHE preprocessing for EM-like images.
+    - Works on grayscale luminance.
+    - Blends CLAHE output with the original to keep the effect mild.
+    """
+
+    def __init__(
+        self,
+        clip_limit: float = 1.5,
+        tiles: tuple[int, int] = (8, 8),
+        blend_alpha: float = 0.35,
+    ):
+        self.clip_limit = float(clip_limit)
+        self.tiles = (int(tiles[0]), int(tiles[1]))
+        self.blend_alpha = float(blend_alpha)
+
+    def __call__(self, image: Image.Image) -> Image.Image:
+        gray = np.asarray(image.convert("L"), dtype=np.uint8)
+        clahe = _clahe_gray_uint8(gray, clip_limit=self.clip_limit, tiles=self.tiles)
+        alpha = min(max(self.blend_alpha, 0.0), 1.0)
+        mixed = np.round((1.0 - alpha) * gray + alpha * clahe).astype(np.uint8)
+        if image.mode == "RGB":
+            return Image.merge("RGB", (Image.fromarray(mixed), Image.fromarray(mixed), Image.fromarray(mixed)))
+        return Image.fromarray(mixed)
+
+
+def em_seg_transforms(img_size=(308,308), clahe_norm: bool = False):
+    ops = []
+    if clahe_norm:
+        ops.append(_EMSubtleCLAHE())
+    ops.extend(
+        [
+            T.ToTensor(),
+            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+        ]
+    )
+    return T.Compose(ops)
 
 
 def _flip_array(arr: np.ndarray, axis_mode: str) -> np.ndarray:

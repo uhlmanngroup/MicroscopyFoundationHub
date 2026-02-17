@@ -56,3 +56,5 @@ ood:
   topk: 32
   outlier_grid_topk: 16
   outlier_grid_cols: 4
+
+clahe_norm: false

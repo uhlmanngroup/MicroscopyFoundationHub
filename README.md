@@ -60,6 +60,7 @@ For a full list of entrypoints and their purpose, see `scripts/README.md`.
 - Full fine-tuning: set `use_lora: false` and `full_finetune: true`.
 - Head-only (frozen backbone): set `use_lora: false` and omit `full_finetune`.
 - Train-time augmentation: set `data_augmentation: true` to enable train-only `flip -> random shift` (disabled by default).
+- CLAHE preprocessing: set `clahe_norm: true` to apply subtle CLAHE on all splits (train/val/test) before ImageNet normalization.
 
 **DINOv3 Weights**
 

@@ -36,6 +36,7 @@ dataset:
 
 # ---- LoRA / head ----
 use_lora: false
+full_finetune: true
 lora_rank: 8
 lora_alpha: 32
 lora:

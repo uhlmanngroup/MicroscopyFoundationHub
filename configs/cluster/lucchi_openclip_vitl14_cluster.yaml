@@ -37,6 +37,7 @@ num_classes: 2
 
 # ---- LoRA ----
 use_lora: false
+full_finetune: true
 lora_rank: 16
 lora_alpha: 32
 lora:

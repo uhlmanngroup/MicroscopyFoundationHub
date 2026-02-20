@@ -8,9 +8,9 @@ test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
 test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
 
 # results + experiment naming
-experiment_id: "2025-01-01_A2_dinopoc_fullft_seg"
+experiment_id: "2026-02-18_A2_dinopoc_fullft_DA_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2/seg/"
-task_type: "paired-fullft"
+task_type: "paired-fullft-DA"
 
 # stitched dataset already shares a naming scheme between images/masks
 dataset:
@@ -52,7 +52,7 @@ device: auto
 amp: false
 val_ratio: 0.1
 split_seed: 42
-data_augmentation: false
+data_augmentation: true
 
 # ---- loss (CE + Tversky on foreground) ----
 loss: dice      # ce, dice, ce_tversky

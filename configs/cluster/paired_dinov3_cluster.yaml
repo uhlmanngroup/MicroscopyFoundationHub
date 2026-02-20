@@ -50,6 +50,7 @@ lora:
   compatibility_mode: true
 
 full_finetune: true
+data_augmentation: true
 
 # ---- training ----
 batch_size: 2

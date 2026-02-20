@@ -53,14 +53,11 @@ amp: false
 val_ratio: 0.1
 split_seed: 42
 data_augmentation: true
+data_augmentation_prob: 0.5
+clahe_norm: false
 
-# ---- loss (CE + Tversky on foreground) ----
-loss: dice      # ce, dice, ce_tversky
-class_weights: [1.0, 15.0]    # bg, fg
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
-tversky_weight: 0.6   # lambda: 0.6*Tversky + 0.4*CE
+# ---- loss ----
+loss: dice
 
 # ---- training safety ----
 clip_grad_norm: 1.0   # global grad clip
@@ -68,5 +65,3 @@ clip_grad_norm: 1.0   # global grad clip
 # ---- export / viz ----
 binarize: true
 binarize_threshold: 128
-
-clahe_norm: false

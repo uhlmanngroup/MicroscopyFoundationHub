@@ -1,8 +1,8 @@
 from torchvision import transforms as T
 import torch 
+import torch.nn.functional as F
 from PIL import Image
 import numpy as np
-import random
 
 from .image_size import compute_resized_hw, parse_img_size_config
 
@@ -101,91 +101,94 @@ def em_seg_transforms(img_size=(308,308), clahe_norm: bool = False):
     return T.Compose(ops)
 
 
-def _flip_array(arr: np.ndarray, axis_mode: str) -> np.ndarray:
-    if axis_mode in ("h", "hv"):
-        arr = np.flip(arr, axis=1)
-    if axis_mode in ("v", "hv"):
-        arr = np.flip(arr, axis=0)
-    return np.ascontiguousarray(arr)
-
-
-def _shift_array_reflect(arr: np.ndarray, dx: int, dy: int) -> np.ndarray:
+def _shift_chw_reflect(image: torch.Tensor, dx: int, dy: int) -> torch.Tensor:
     if dx == 0 and dy == 0:
-        return arr
-    h, w = arr.shape[:2]
+        return image
+    _, h, w = image.shape
     pad_x = abs(dx)
     pad_y = abs(dy)
-    pad_spec = [(pad_y, pad_y), (pad_x, pad_x)]
-    if arr.ndim == 3:
-        pad_spec.append((0, 0))
     pad_mode = "reflect"
     if (h == 1 and pad_y > 0) or (w == 1 and pad_x > 0):
-        pad_mode = "edge"
-    padded = np.pad(arr, pad_spec, mode=pad_mode)
+        pad_mode = "replicate"
+    padded = F.pad(
+        image.unsqueeze(0),
+        (pad_x, pad_x, pad_y, pad_y),
+        mode=pad_mode,
+    ).squeeze(0)
     y0 = pad_y - dy
     x0 = pad_x - dx
-    return np.ascontiguousarray(padded[y0:y0 + h, x0:x0 + w])
+    return padded[:, y0:y0 + h, x0:x0 + w]
 
 
-def _shift_mask_zero(mask: np.ndarray, dx: int, dy: int) -> np.ndarray:
+def _shift_hw_zero(mask: torch.Tensor, dx: int, dy: int) -> torch.Tensor:
     if dx == 0 and dy == 0:
         return mask
-    h, w = mask.shape[:2]
-    out = np.zeros_like(mask)
-    span_w = w - abs(dx)
-    span_h = h - abs(dy)
-    if span_w <= 0 or span_h <= 0:
-        return out
-    src_x0 = max(0, -dx)
-    src_y0 = max(0, -dy)
-    dst_x0 = max(0, dx)
-    dst_y0 = max(0, dy)
-    src_x1 = src_x0 + span_w
-    src_y1 = src_y0 + span_h
-    dst_x1 = dst_x0 + span_w
-    dst_y1 = dst_y0 + span_h
-    out[dst_y0:dst_y1, dst_x0:dst_x1] = mask[src_y0:src_y1, src_x0:src_x1]
-    return out
+    h, w = mask.shape
+    pad_x = abs(dx)
+    pad_y = abs(dy)
+    padded = F.pad(
+        mask.unsqueeze(0).unsqueeze(0),
+        (pad_x, pad_x, pad_y, pad_y),
+        mode="constant",
+        value=0,
+    ).squeeze(0).squeeze(0)
+    y0 = pad_y - dy
+    x0 = pad_x - dx
+    return padded[y0:y0 + h, x0:x0 + w]
 
 
-class EMSegFlipShiftAug:
+def em_seg_online_augment(
+    images: torch.Tensor,
+    masks: torch.Tensor,
+    *,
+    prob: float = 0.5,
+    max_shift_percent: float = 0.05,
+) -> tuple[torch.Tensor, torch.Tensor, int]:
     """
-    Joint EM segmentation augmentation applied to image+mask:
-      1) Always flip using a random axis mode from {h, v, hv}
-      2) Always shift by up to max_shift_percent (per axis)
-         - image border uses reflect padding
-         - mask border is filled with class 0
+    Online EM segmentation augmentation on batched tensors.
+
+    For each sample with probability `prob`, apply:
+      1) random flip axis from {h, v, hv}
+      2) random shift up to max_shift_percent per axis
     """
+    if images.dim() != 4 or masks.dim() != 3:
+        raise ValueError(
+            f"Expected images=(B,C,H,W) and masks=(B,H,W), got {tuple(images.shape)} and {tuple(masks.shape)}"
+        )
+    p = float(min(max(prob, 0.0), 1.0))
+    if p == 0.0:
+        return images, masks, 0
+    if max_shift_percent < 0 or max_shift_percent >= 1:
+        raise ValueError("max_shift_percent must be in [0, 1).")
 
-    def __init__(self, max_shift_percent: float = 0.05):
-        if max_shift_percent < 0 or max_shift_percent >= 1:
-            raise ValueError("max_shift_percent must be in [0, 1).")
-        self.max_shift_percent = float(max_shift_percent)
+    bsz = images.size(0)
+    apply_mask = torch.rand(bsz, device=images.device) < p
+    selected = torch.nonzero(apply_mask, as_tuple=False).flatten()
+    if selected.numel() == 0:
+        return images, masks, 0
 
-    def __call__(self, image: Image.Image, mask: Image.Image):
-        img_np = np.asarray(image)
-        mask_np = np.asarray(mask)
+    out_images = images.clone()
+    out_masks = masks.clone()
+    _, _, h, w = images.shape
+    max_dx = int(round(w * float(max_shift_percent)))
+    max_dy = int(round(h * float(max_shift_percent)))
 
-        axis_mode = random.choice(("h", "v", "hv"))
-        img_np = _flip_array(img_np, axis_mode)
-        mask_np = _flip_array(mask_np, axis_mode)
+    for i in selected.tolist():
+        axis_mode = int(torch.randint(0, 3, (1,), device=images.device).item())
+        if axis_mode in (0, 2):
+            out_images[i] = torch.flip(out_images[i], dims=(-1,))
+            out_masks[i] = torch.flip(out_masks[i], dims=(-1,))
+        if axis_mode in (1, 2):
+            out_images[i] = torch.flip(out_images[i], dims=(-2,))
+            out_masks[i] = torch.flip(out_masks[i], dims=(-2,))
 
-        h, w = img_np.shape[:2]
-        max_dx = int(round(w * self.max_shift_percent))
-        max_dy = int(round(h * self.max_shift_percent))
-        dx = random.randint(-max_dx, max_dx) if max_dx > 0 else 0
-        dy = random.randint(-max_dy, max_dy) if max_dy > 0 else 0
+        dx = int(torch.randint(-max_dx, max_dx + 1, (1,), device=images.device).item()) if max_dx > 0 else 0
+        dy = int(torch.randint(-max_dy, max_dy + 1, (1,), device=images.device).item()) if max_dy > 0 else 0
+        if dx != 0 or dy != 0:
+            out_images[i] = _shift_chw_reflect(out_images[i], dx=dx, dy=dy)
+            out_masks[i] = _shift_hw_zero(out_masks[i], dx=dx, dy=dy)
 
-        img_np = _shift_array_reflect(img_np, dx=dx, dy=dy)
-        mask_np = _shift_mask_zero(mask_np, dx=dx, dy=dy)
-
-        return Image.fromarray(img_np), Image.fromarray(mask_np)
-
-
-def em_seg_joint_augment(enabled: bool, max_shift_percent: float = 0.05):
-    if not enabled:
-        return None
-    return EMSegFlipShiftAug(max_shift_percent=max_shift_percent)
+    return out_images, out_masks, int(selected.numel())
 
 def denorm_imagenet(x: torch.Tensor) -> torch.Tensor:
     """

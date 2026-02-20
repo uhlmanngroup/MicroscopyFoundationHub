@@ -10,7 +10,7 @@ from copy import deepcopy
 from dino_peft.datasets.lucchi_seg import LucchiSegDataset
 from dino_peft.datasets.droso_seg import DrosoSegDataset
 from dino_peft.datasets.paired_dirs_seg import PairedDirsSegDataset
-from dino_peft.utils.transforms import em_seg_transforms, em_seg_joint_augment, denorm_imagenet
+from dino_peft.utils.transforms import em_seg_transforms, em_seg_online_augment, denorm_imagenet
 from dino_peft.utils.viz import colorize_mask
 from dino_peft.utils.plots import save_triptych_grid
 from dino_peft.backbones import (
@@ -99,11 +99,16 @@ class SegTrainer:
 
         self.data_augmentation = bool(self.cfg.get("data_augmentation", False))
         self.cfg["data_augmentation"] = self.data_augmentation
+        self.data_augmentation_prob = float(self.cfg.get("data_augmentation_prob", 0.5))
+        self.data_augmentation_prob = float(min(max(self.data_augmentation_prob, 0.0), 1.0))
+        self.cfg["data_augmentation_prob"] = self.data_augmentation_prob
         self.clahe_norm = bool(self.cfg.get("clahe_norm", False))
         self.cfg["clahe_norm"] = self.clahe_norm
         self.aug_shift_percent = 0.05
         self.aug_policy = {
             "enabled": self.data_augmentation,
+            "mode": "online_batch",
+            "prob": self.data_augmentation_prob,
             "order": "flip_then_shift",
             "flip_axes": "random_h_v_hv",
             "shift_percent": self.aug_shift_percent,
@@ -152,6 +157,7 @@ class SegTrainer:
                 "backbone_variant": backbone_cfg.get("variant"),
                 "preprocess_preset": preprocess_cfg.get("preset"),
                 "data_augmentation": self.data_augmentation,
+                "data_augmentation_prob": self.data_augmentation_prob,
                 "augmentation_policy": self.aug_policy,
                 "clahe_norm": self.clahe_norm,
             },
@@ -180,12 +186,11 @@ class SegTrainer:
             dataset_params.setdefault("recursive", True)
         dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 
-        def _build_dataset(img_dir, mask_dir, transform, joint_transform):
+        def _build_dataset(img_dir, mask_dir, transform):
             kwargs = {
                 "img_size": self.img_size_cfg,
                 "to_rgb": True,
                 "transform": transform,
-                "joint_transform": joint_transform,
                 "binarize": bool(self.cfg.get("binarize", True)),
                 "binarize_threshold": int(self.cfg.get("binarize_threshold", 128)),
             }
@@ -198,18 +203,12 @@ class SegTrainer:
 
         t_train = em_seg_transforms(clahe_norm=self.clahe_norm)   # deterministic pipeline (resize handled in dataset)
         t_val   = em_seg_transforms(clahe_norm=self.clahe_norm)
-        j_train = em_seg_joint_augment(
-            enabled=self.data_augmentation,
-            max_shift_percent=self.aug_shift_percent,
-        )
-        j_val = None
 
         # -------- base dataset (NO transform) ----------
         base_ds = _build_dataset(
             self.cfg["train_img_dir"],
             self.cfg["train_mask_dir"],
             transform=None,
-            joint_transform=None,
         )
 
         # -------- 10% validation split ----------
@@ -221,19 +220,18 @@ class SegTrainer:
         perm = torch.randperm(n, generator=g).tolist()
         train_idx, val_idx = perm[:n_train], perm[n_train:]
 
-        def make_subset_dataset(src_ds, index_list, transform, joint_transform):
+        def make_subset_dataset(src_ds, index_list, transform):
             ds = _build_dataset(
                 self.cfg["train_img_dir"],
                 self.cfg["train_mask_dir"],
                 transform=transform,
-                joint_transform=joint_transform,
             )
             ds.pairs = [src_ds.pairs[i] for i in index_list]
             return ds
 
         # -------- final datasets ----------
-        self.train_ds = make_subset_dataset(base_ds, train_idx, t_train, j_train)
-        self.val_ds   = make_subset_dataset(base_ds, val_idx,   t_val, j_val)   # no train aug on validation
+        self.train_ds = make_subset_dataset(base_ds, train_idx, t_train)
+        self.val_ds   = make_subset_dataset(base_ds, val_idx,   t_val)   # no train aug on validation
 
         # -------- loaders ----------
         pin = (self.device.type == "cuda")
@@ -391,7 +389,13 @@ class SegTrainer:
                 imgs = imgs.to(self.device, non_blocking=True)
                 masks = masks.to(self.device, non_blocking=True)
                 if self.data_augmentation:
-                    augmented_images_epoch += int(imgs.shape[0])
+                    imgs, masks, n_aug = em_seg_online_augment(
+                        imgs,
+                        masks,
+                        prob=self.data_augmentation_prob,
+                        max_shift_percent=self.aug_shift_percent,
+                    )
+                    augmented_images_epoch += int(n_aug)
 
                 self.optimizer.zero_grad(set_to_none=True)
 
@@ -491,7 +495,7 @@ class SegTrainer:
             if self.data_augmentation:
                 print(
                     f"[epoch {epoch}/{self.epochs}] augmented_images={augmented_images_epoch} "
-                    f"(policy=flip_then_shift, shift={self.aug_shift_percent:.2%})"
+                    f"(online, p={self.data_augmentation_prob:.2f}, shift={self.aug_shift_percent:.2%})"
                 )
 
             # Checkpoints
@@ -535,6 +539,7 @@ class SegTrainer:
                 "patience": int(self.patience),
                 "seed": int(self.seed),
                 "data_augmentation": self.data_augmentation,
+                "data_augmentation_prob": self.data_augmentation_prob,
                 "augmentation_policy": self.aug_policy,
                 "augmented_images_last_epoch": int(augmented_images_last_epoch),
                 "augmented_images_total": int(augmented_images_total),

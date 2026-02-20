@@ -11,6 +11,7 @@ Directory map:
 
 Config notes:
 - Set `use_lora: false` + `full_finetune: true` for full fine-tuning (no LoRA).
-- Set `data_augmentation: true` to enable train-only EM augmentation (`flip -> random shift`).
-- Keep `data_augmentation: false` (default) for no train-time augmentation.
+- Set `data_augmentation: true` to enable train-only online EM augmentation (`flip -> random shift`).
+- Use `data_augmentation_prob` (default `0.5`) to control per-sample online augmentation probability.
+- Keep `data_augmentation: false` for no train-time augmentation.
 - Set `clahe_norm: true` to enable subtle CLAHE preprocessing on all splits before ImageNet normalization.

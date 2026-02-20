@@ -37,7 +37,6 @@ class LucchiSegDataset(PairedDirsSegDataset):
         img_size=(308, 308),
         to_rgb=True,
         transform=None,
-        joint_transform=None,
         binarize=False,
         binarize_threshold=128,
         recursive=False,
@@ -50,7 +49,6 @@ class LucchiSegDataset(PairedDirsSegDataset):
         self.mask_dir  = Path(mask_dir)
         self.to_rgb    = bool(to_rgb)
         self.transform = transform
-        self.joint_transform = joint_transform
         self.binarize  = bool(binarize)
         self.thresh    = int(binarize_threshold)
         self.resize_spec = parse_img_size_config(img_size)

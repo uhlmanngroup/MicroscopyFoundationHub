@@ -1,5 +1,5 @@
 # Environment: cluster (UZH Science) - composed DINO-POC dataset
-# Short DINOv3 vits16 head-only run for a quick sanity check.
+# DINOv3 paired full fine-tuning config.
 
 # ---- I/O ----
 train_img_dir: "/home/cfuste/data/datasets/DINO-POC/train/images"
@@ -37,20 +37,12 @@ img_size:
 num_classes: 2
 
 
-# ---- LoRA ----
+# ---- fine-tuning ----
 use_lora: false
-# lora_targets: [attn.qkv, attn.proj]
-lora_rank: 16
-lora_alpha: 32
-lora:
-  enabled: false
-  target_policy: vit_attention_only
-  layer_selection: all
-  exclude: [head, decoder, seg_head]
-  compatibility_mode: true
-
 full_finetune: true
 data_augmentation: true
+data_augmentation_prob: 0.5
+clahe_norm: false
 
 # ---- training ----
 batch_size: 2
@@ -64,13 +56,8 @@ amp: false
 val_ratio: 0.1
 split_seed: 42
 
-# ---- loss (CE + Tversky on foreground) ----
-loss: dice      # ce, dice, ce_tversky
-class_weights: [1.0, 15.0]    # bg, fg
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
-tversky_weight: 0.6   # lambda: 0.6*Tversky + 0.4*CE
+# ---- loss ----
+loss: dice
 
 # ---- training safety ----
 clip_grad_norm: 1.0   # global grad clip
@@ -82,5 +69,3 @@ binarize_threshold: 128
 # ---- evaluation previews ----
 eval_preview_mode: all   # all|random
 eval_preview_cols: 4
-
-clahe_norm: false

@@ -2,17 +2,16 @@
 # DINOv2 baseline config.
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/DINO-POC/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/DINO-POC/train/masks"
-test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
-test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/TRIPLET/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/TRIPLET/train/masks"
+test_img_dir:    "/home/cfuste/data/datasets/TRIPLET/test/images"
+test_mask_dir:   "/home/cfuste/data/datasets/TRIPLET/test/masks"
 
 # results + experiment naming
-experiment_id: "2025-01-01_A2_dinopoc_dinov2-base_lora-r16_seg"
-results_root: "/home/cfuste/data/DINO-LoRA"
-task_type: "seg"
+experiment_id: "2025-02-23_TRIPLET_dinov2_frozen_seg"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov2/seg"
+task_type: "triplet-nolora"
 
-# stitched dataset already shares a naming scheme between images/masks
 dataset:
   type: paired          # use generic PairedDirsSegDataset
   params:
@@ -36,16 +35,13 @@ img_size:
   rounding: floor
 num_classes: 2
 
-
-# ---- LoRA ----
-use_lora: true
-lora_targets: [attn.qkv, attn.proj]
-lora_rank: 16
-lora_alpha: 32
+# ---- fine-tuning ----
+use_lora: false
+full_finetune: true
 
 # ---- training ----
 batch_size: 2
-epochs: 80
+epochs: 1000
 patience: 20
 lr: 0.00005
 weight_decay: 0.0001
@@ -54,14 +50,12 @@ device: auto
 amp: false
 val_ratio: 0.1
 split_seed: 42
+data_augmentation: false
+data_augmentation_prob: 0.5
+clahe_norm: false
 
-# ---- loss (CE + Tversky on foreground) ----
-loss: dice      # ce, dice, ce_tversky 
-class_weights: [1.0, 15.0]    # bg, fg
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
-tversky_weight: 0.6   # lambda: 0.6*Tversky + 0.4*CE
+# ---- loss ----
+loss: dice
 
 # ---- training safety ----
 clip_grad_norm: 1.0   # global grad clip
@@ -69,5 +63,3 @@ clip_grad_norm: 1.0   # global grad clip
 # ---- export / viz ----
 binarize: true
 binarize_threshold: 128
-
-clahe_norm: false

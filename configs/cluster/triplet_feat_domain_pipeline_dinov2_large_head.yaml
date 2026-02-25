@@ -1,0 +1,71 @@
+# Cluster pipeline config: extract features -> PCA/UMAP -> pairwise domain analysis
+# on the TRIPLET dataset (lucchi + droso + kasthuri).
+#
+# Edit these before running:
+# - data.data_dir (train/images or test/images you want to analyze)
+# - results_root
+# - experiment_id
+#
+# This config is intended for frozen-backbone features (no LoRA checkpoint).
+
+experiment_id: "2026-02-25_triplet_dinov2-large_head_feats_test"
+results_root: "/home/cfuste/data/DINO-LoRA"
+task_type: "feat-analysis/triplet"
+
+data:
+  # Choose the split/folder you want to analyze with PCA/FDD/LR.
+  # The pipeline wrapper will automatically set data.input_path to the generated features.npz.
+  data_dir: "/home/cfuste/data/datasets/TRIPLET/test/images"
+
+model:
+  backbone:
+    name: dinov2
+    variant: large
+    load_backend: torchhub
+    weights: null
+    repo_dir: null
+    preprocess:
+      preset: em
+  dino_size: "large"
+  checkpoint: null   # keep null for frozen backbone base features
+
+runtime:
+  batch_size: 8
+  num_workers: 4
+  device: "auto"
+  img_size:
+    mode: longest_edge
+    target: 1022
+    patch_multiple: 14
+    rounding: floor
+
+# PCA/UMAP visualization settings (used by scripts/run_pca.py)
+pca:
+  n_components: 50
+  plot_dims: [0, 1]
+  whiten: false
+  l2norm: false
+  seed: 0
+
+umap:
+  enabled: true
+  pca_dim: 50
+  n_neighbors: 15
+  min_dist: 0.1
+  n_components: 2
+  metric: euclidean
+  seed: 0
+
+# Pairwise FDD + LR domain analysis (auto-detects dataset names from features.npz)
+domain_analysis:
+  mode: pairwise_all
+  # source_npz is injected automatically by scripts/run_feature_domain_pipeline.py
+  include_dataset_names: ["lucchi", "droso", "kasthuri"]   # optional safety lock
+  n_components: 64
+  seed: 0
+  output_subdir: "domain-analysis"
+  json_name: "pairwise_metrics.json"
+  csv_name: "pairwise_metrics.csv"
+  use_run_dir_metrics: false
+
+clahe_norm: false

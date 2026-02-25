@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
+import re
 
 from dino_peft.backbones import (
     build_backbone,
@@ -40,6 +41,25 @@ def _remap_lora_state(lora_state: dict, model_state: dict) -> tuple[dict, str]:
 
     best = max(candidates, key=lambda item: item[2])
     return best[1], best[0]
+
+
+def _infer_dataset_name_from_filename(path_like: str | Path) -> str:
+    """Infer dataset name from a composed filename like '<dataset>-<split>-<idx>.*'."""
+    name = Path(path_like).name
+    stem = Path(name).stem
+
+    # Preferred convention used in composed datasets: <dataset>-<split>-<slice>
+    if "-" in stem:
+        prefix = stem.split("-", 1)[0].strip().lower()
+        if prefix:
+            return prefix
+
+    # Fallback for older names without dashes: take leading alphabetic token.
+    m = re.match(r"([A-Za-z][A-Za-z0-9_]*)", stem)
+    if m:
+        return m.group(1).lower()
+
+    raise ValueError(f"Cannot infer dataset name from filename '{name}'")
 
 @torch.no_grad()
 def extract_features_from_folder(
@@ -171,15 +191,9 @@ def extract_features_from_folder(
         feats_np = output.global_embedding.cpu().numpy().astype("float32")
         all_features.append(feats_np)
         all_paths.extend(paths)
-        # Infer dataset name from filename prefix
+        # Infer dataset name from filename prefix (supports N datasets in composed folders).
         for p in paths:
-            name = Path(p).name
-            if name.startswith("lucchi"):
-                all_dataset_names.append("lucchi")
-            elif name.startswith("droso"):
-                all_dataset_names.append("droso")
-            else:
-                raise ValueError(f"Cannot infer dataset name from filename '{name}'")
+            all_dataset_names.append(_infer_dataset_name_from_filename(p))
 
     features_np = np.concatenate(all_features, axis=0)  # (N, C)
     unique_names = sorted(set(all_dataset_names))

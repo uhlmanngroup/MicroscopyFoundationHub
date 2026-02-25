@@ -2,17 +2,16 @@
 # DINOv3 paired full fine-tuning config.
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/DINO-POC/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/DINO-POC/train/masks"
-test_img_dir:    "/home/cfuste/data/datasets/DINO-POC/test/images"
-test_mask_dir:   "/home/cfuste/data/datasets/DINO-POC/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/TRIPLET/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/TRIPLET/train/masks"
+test_img_dir:    "/home/cfuste/data/datasets/TRIPLET/test/images"
+test_mask_dir:   "/home/cfuste/data/datasets/TRIPLET/test/masks"
 
 # results + experiment naming
-experiment_id: "2026-02-11_dinov3-vits16_head_seg_fullft"
+experiment_id: "2025-02-23_TRIPLET_dinov3_frozen_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov3/seg/"
-task_type: "paired-fullft"
+task_type: "triplet-nolora"
 
-# stitched dataset already shares a naming scheme between images/masks
 dataset:
   type: paired          # use generic PairedDirsSegDataset
   params:
@@ -39,8 +38,8 @@ num_classes: 2
 
 # ---- fine-tuning ----
 use_lora: false
-full_finetune: true
-data_augmentation: true
+full_finetune: false
+data_augmentation: false
 data_augmentation_prob: 0.5
 clahe_norm: false
 

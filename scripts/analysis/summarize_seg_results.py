@@ -39,6 +39,7 @@ class RunRecord:
     run_dir: Path
     rel_run_dir: str
     experiment_id: str
+    task_type: Optional[str]
     backbone_name: Optional[str]
     backbone_variant: Optional[str]
     dino_size: str
@@ -169,6 +170,7 @@ def collect_runs(
                 run_dir=run_dir,
                 rel_run_dir=safe_relative_to(run_dir, root),
                 experiment_id=cfg.get("experiment_id", run_dir.name),
+                task_type=cfg.get("task_type"),
                 backbone_name=backbone_cfg.get("name"),
                 backbone_variant=backbone_cfg.get("variant"),
                 dino_size=str(backbone_cfg.get("variant", cfg.get("dino_size", "unknown"))).lower(),
@@ -206,12 +208,13 @@ def compute_stats(values: Iterable[float]) -> Tuple[Optional[float], Optional[fl
 
 
 def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
-    grouped: Dict[Tuple[str, bool, bool, str], Dict[str, List[float]]] = {}
-    counts: Dict[Tuple[str, bool, bool, str], int] = {}
+    grouped: Dict[Tuple[str, str, bool, bool, str], Dict[str, List[float]]] = {}
+    counts: Dict[Tuple[str, str, bool, bool, str], int] = {}
 
     for record in run_records:
+        task_type = str(record.task_type or "unknown")
         ds_type = (record.dataset_type or "unknown").lower()
-        key = (ds_type, record.use_lora, record.full_finetune, record.dino_size)
+        key = (task_type, ds_type, record.use_lora, record.full_finetune, record.dino_size)
         if key not in grouped:
             grouped[key] = {metric: [] for metric in METRIC_KEYS}
             counts[key] = 0
@@ -228,15 +231,16 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
         "invalid_lora_and_fullft": 3,
     }
 
-    def _sort_key(item: Tuple[Tuple[str, bool, bool, str], Dict[str, List[float]]]):
-        (ds_type, use_lora, full_finetune, size), _ = item
+    def _sort_key(item: Tuple[Tuple[str, str, bool, bool, str], Dict[str, List[float]]]):
+        (task_type, ds_type, use_lora, full_finetune, size), _ = item
         mode = infer_training_mode(use_lora, full_finetune)
-        return (ds_type, mode_order.get(mode, 99), size_rank(size), size)
+        return (task_type, ds_type, mode_order.get(mode, 99), size_rank(size), size)
 
     aggregates: List[Dict] = []
     for key, metric_lists in sorted(grouped.items(), key=_sort_key):
-        dataset_type, use_lora, full_finetune, size = key
+        task_type, dataset_type, use_lora, full_finetune, size = key
         row: Dict[str, Optional[float]] = {
+            "task_type": task_type,
             "dataset_type": dataset_type,
             "use_lora": use_lora,
             "full_finetune": full_finetune,
@@ -265,6 +269,7 @@ def serialize_run_record(record: RunRecord) -> Dict[str, object]:
         "run_dir": str(record.run_dir),
         "rel_run_dir": record.rel_run_dir,
         "experiment_id": record.experiment_id,
+        "task_type": record.task_type,
         "backbone_name": record.backbone_name,
         "backbone_variant": record.backbone_variant,
         "dino_size": record.dino_size,
@@ -309,6 +314,7 @@ def main() -> None:
         "run_dir",
         "rel_run_dir",
         "experiment_id",
+        "task_type",
         "use_lora",
         "full_finetune",
         "training_mode",
@@ -329,6 +335,7 @@ def main() -> None:
     ]
     summary_fieldnames = [
         "dataset_type",
+        "task_type",
         "use_lora",
         "full_finetune",
         "training_mode",

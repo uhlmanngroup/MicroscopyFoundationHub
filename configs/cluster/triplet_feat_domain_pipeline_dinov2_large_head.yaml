@@ -15,7 +15,9 @@ task_type: "feat-analysis/triplet-nolora"
 data:
   # Choose the split/folder you want to analyze with PCA/FDD/LR.
   # The pipeline wrapper will automatically set data.input_path to the generated features.npz.
-  data_dir: "/home/cfuste/data/datasets/TRIPLET/test/images"
+  # For center-cropped analysis, point this to the cropped dataset produced by
+  # scripts/utils/center_crop_triplet_images.py
+  data_dir: "/home/cfuste/data/datasets/TRIPLET_C112/test/images"
 
 model:
   backbone:
@@ -34,10 +36,9 @@ runtime:
   num_workers: 4
   device: "auto"
   img_size:
-    mode: longest_edge
-    target: 1022
-    patch_multiple: 14
-    rounding: floor
+    # Keep the center crop unchanged (no resize): cropped images are already 112x112.
+    mode: fixed
+    size: [112, 112]
 
 # PCA/UMAP visualization settings (used by scripts/run_pca.py)
 pca:

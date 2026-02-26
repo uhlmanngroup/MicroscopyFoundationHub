@@ -8,9 +8,9 @@
 #
 # This config is intended for frozen-backbone features (no LoRA checkpoint).
 
-experiment_id: "2026-02-25_triplet_dinov2-large_head_feats_test"
-results_root: "/home/cfuste/data/DINO-LoRA"
-task_type: "feat-analysis/triplet"
+experiment_id: "2026-02-25_triplet_dinov2-large_head_feats_analysis"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+task_type: "feat-analysis/triplet-nolora"
 
 data:
   # Choose the split/folder you want to analyze with PCA/FDD/LR.

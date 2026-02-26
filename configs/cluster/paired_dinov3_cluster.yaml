@@ -10,7 +10,7 @@ test_mask_dir:   "/home/cfuste/data/datasets/TRIPLET/test/masks"
 # results + experiment naming
 experiment_id: "2025-02-23_TRIPLET_dinov3_frozen_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov3/seg/"
-task_type: "triplet-nolora"
+task_type: "triplet-lora"
 
 dataset:
   type: paired          # use generic PairedDirsSegDataset
@@ -37,7 +37,7 @@ num_classes: 2
 
 
 # ---- fine-tuning ----
-use_lora: false
+use_lora: true
 full_finetune: false
 data_augmentation: false
 data_augmentation_prob: 0.5

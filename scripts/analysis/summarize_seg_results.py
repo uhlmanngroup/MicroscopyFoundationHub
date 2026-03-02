@@ -49,6 +49,7 @@ class RunRecord:
     replicate: Optional[int]
     seed: Optional[int]
     loss: Optional[str]
+    dataset_label: Optional[str]
     dataset_type: Optional[str]
     pair_mode: Optional[str]
     mean_dice: Optional[float]
@@ -138,6 +139,57 @@ def infer_training_mode(use_lora: bool, full_finetune: bool) -> str:
     return "head_only"
 
 
+def _canonical_dataset_label(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    s = str(text).strip().lower()
+    if not s:
+        return None
+    if "kasthuri" in s:
+        return "Kasthuri++"
+    if "lucchi" in s:
+        return "Lucchi++"
+    if "droso" in s or "drosophila" in s or "vnc" in s:
+        return "VNC"
+    if "triplet" in s:
+        return "Triplet"
+    if "paired" in s:
+        return "Paired"
+    return None
+
+
+def infer_dataset_label(cfg: Dict, run_dir: Path) -> str:
+    dataset_cfg = cfg.get("dataset") or {}
+    dataset_params = dataset_cfg.get("params") or {}
+
+    explicit_label = dataset_cfg.get("label") or dataset_params.get("label")
+    explicit_canonical = _canonical_dataset_label(explicit_label)
+    if explicit_canonical:
+        return explicit_canonical
+    if explicit_label and str(explicit_label).strip():
+        return str(explicit_label).strip()
+
+    candidates = [
+        cfg.get("task_type"),
+        cfg.get("experiment_id"),
+        cfg.get("train_img_dir"),
+        cfg.get("train_mask_dir"),
+        cfg.get("test_img_dir"),
+        cfg.get("test_mask_dir"),
+        str(run_dir),
+    ]
+    for item in candidates:
+        label = _canonical_dataset_label(item)
+        if label:
+            return label
+
+    fallback = _canonical_dataset_label(dataset_cfg.get("type"))
+    if fallback:
+        return fallback
+    ds_type = str(dataset_cfg.get("type") or "Unknown").strip()
+    return ds_type.title() if ds_type else "Unknown"
+
+
 def collect_runs(
     root: Path, summary_dir: Path, metrics_filename: str, config_candidates: Sequence[str]
 ) -> List[RunRecord]:
@@ -183,6 +235,7 @@ def collect_runs(
                 replicate=extract_replicate(run_dir.name),
                 seed=train_metrics.get("seed"),
                 loss=cfg.get("loss"),
+                dataset_label=infer_dataset_label(cfg, run_dir),
                 dataset_type=(cfg.get("dataset") or {}).get("type"),
                 pair_mode=((cfg.get("dataset") or {}).get("params") or {}).get(
                     "pair_mode"
@@ -208,13 +261,21 @@ def compute_stats(values: Iterable[float]) -> Tuple[Optional[float], Optional[fl
 
 
 def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
-    grouped: Dict[Tuple[str, str, bool, bool, str], Dict[str, List[float]]] = {}
-    counts: Dict[Tuple[str, str, bool, bool, str], int] = {}
+    grouped: Dict[Tuple[str, str, str, bool, bool, str], Dict[str, List[float]]] = {}
+    counts: Dict[Tuple[str, str, str, bool, bool, str], int] = {}
 
     for record in run_records:
+        ds_label = str(record.dataset_label or "Unknown")
         task_type = str(record.task_type or "unknown")
         ds_type = (record.dataset_type or "unknown").lower()
-        key = (task_type, ds_type, record.use_lora, record.full_finetune, record.dino_size)
+        key = (
+            ds_label,
+            task_type,
+            ds_type,
+            record.use_lora,
+            record.full_finetune,
+            record.dino_size,
+        )
         if key not in grouped:
             grouped[key] = {metric: [] for metric in METRIC_KEYS}
             counts[key] = 0
@@ -231,15 +292,25 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
         "invalid_lora_and_fullft": 3,
     }
 
-    def _sort_key(item: Tuple[Tuple[str, str, bool, bool, str], Dict[str, List[float]]]):
-        (task_type, ds_type, use_lora, full_finetune, size), _ = item
+    def _sort_key(
+        item: Tuple[Tuple[str, str, str, bool, bool, str], Dict[str, List[float]]]
+    ):
+        (ds_label, task_type, ds_type, use_lora, full_finetune, size), _ = item
         mode = infer_training_mode(use_lora, full_finetune)
-        return (task_type, ds_type, mode_order.get(mode, 99), size_rank(size), size)
+        return (
+            ds_label.lower(),
+            task_type,
+            ds_type,
+            mode_order.get(mode, 99),
+            size_rank(size),
+            size,
+        )
 
     aggregates: List[Dict] = []
     for key, metric_lists in sorted(grouped.items(), key=_sort_key):
-        task_type, dataset_type, use_lora, full_finetune, size = key
+        dataset_label, task_type, dataset_type, use_lora, full_finetune, size = key
         row: Dict[str, Optional[float]] = {
+            "dataset_label": dataset_label,
             "task_type": task_type,
             "dataset_type": dataset_type,
             "use_lora": use_lora,
@@ -279,6 +350,7 @@ def serialize_run_record(record: RunRecord) -> Dict[str, object]:
         "replicate": record.replicate,
         "seed": record.seed,
         "loss": record.loss,
+        "dataset_label": record.dataset_label,
         "dataset_type": record.dataset_type,
         "pair_mode": record.pair_mode,
         "mean_dice": record.mean_dice,
@@ -324,6 +396,7 @@ def main() -> None:
         "replicate",
         "seed",
         "loss",
+        "dataset_label",
         "dataset_type",
         "pair_mode",
         "mean_dice",
@@ -334,6 +407,7 @@ def main() -> None:
         "best_epoch",
     ]
     summary_fieldnames = [
+        "dataset_label",
         "dataset_type",
         "task_type",
         "use_lora",

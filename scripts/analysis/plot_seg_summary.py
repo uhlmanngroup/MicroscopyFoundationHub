@@ -137,6 +137,52 @@ def normalize_bool_series(series: pd.Series) -> pd.Series:
     return normalized.fillna(False).astype(bool)
 
 
+def _canonical_dataset_label(text: Optional[str]) -> Optional[str]:
+    if text is None:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    low = s.lower()
+    if low in {"nan", "none", "null"}:
+        return None
+    if "kasthuri" in low:
+        return "Kasthuri++"
+    if "lucchi" in low:
+        return "Lucchi++"
+    if "droso" in low or "drosophila" in low or "vnc" in low:
+        return "VNC"
+    if "triplet" in low:
+        return "Triplet"
+    if "paired" in low:
+        return "Paired"
+    return s
+
+
+def attach_dataset_labels(df: pd.DataFrame) -> pd.DataFrame:
+    if "dataset_type" not in df.columns:
+        df["dataset_type"] = "unknown"
+    df["dataset_type"] = df["dataset_type"].astype(str).str.strip().str.lower()
+    if "task_type" not in df.columns:
+        df["task_type"] = "unknown"
+
+    def _pick_label(row: pd.Series) -> str:
+        from_label = _canonical_dataset_label(row.get("dataset_label"))
+        if from_label:
+            return from_label
+        from_task = _canonical_dataset_label(row.get("task_type"))
+        if from_task:
+            return from_task
+        from_type = _canonical_dataset_label(row.get("dataset_type"))
+        if from_type:
+            return from_type
+        return "Unknown"
+
+    df["dataset_label"] = df.apply(_pick_label, axis=1)
+    df["dataset_title"] = df["dataset_label"]
+    return df
+
+
 def prepare_frames(summary_path: Path, runs_path: Path, meta_path: Path) -> SummaryBundle:
     if not summary_path.is_file() or not runs_path.is_file():
         raise FileNotFoundError(
@@ -160,8 +206,7 @@ def prepare_frames(summary_path: Path, runs_path: Path, meta_path: Path) -> Summ
     summary_df["dino_size"] = (
         summary_df["dino_size"].astype(str).str.lower().astype(dino_dtype)
     )
-    summary_df["dataset_type"] = summary_df["dataset_type"].astype(str).str.lower()
-    summary_df["dataset_title"] = summary_df["dataset_type"].str.title()
+    summary_df = attach_dataset_labels(summary_df)
     summary_df["use_lora"] = normalize_bool_series(summary_df["use_lora"])
     summary_df["use_lora_label"] = summary_df["use_lora"].map(
         {True: "LoRA", False: "No LoRA"}
@@ -169,8 +214,7 @@ def prepare_frames(summary_path: Path, runs_path: Path, meta_path: Path) -> Summ
     summary_df["use_lora_label"] = summary_df["use_lora_label"].astype(lora_dtype)
 
     runs_df["dino_size"] = runs_df["dino_size"].astype(str).str.lower().astype(dino_dtype)
-    runs_df["dataset_type"] = runs_df["dataset_type"].astype(str).str.lower()
-    runs_df["dataset_title"] = runs_df["dataset_type"].str.title()
+    runs_df = attach_dataset_labels(runs_df)
     runs_df["use_lora"] = normalize_bool_series(runs_df["use_lora"])
     runs_df["use_lora_label"] = runs_df["use_lora"].map(
         {True: "LoRA", False: "No LoRA"}

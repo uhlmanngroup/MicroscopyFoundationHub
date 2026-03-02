@@ -8,9 +8,9 @@ test_img_dir:    "/home/cfuste/data/datasets/TRIPLET/test/images"
 test_mask_dir:   "/home/cfuste/data/datasets/TRIPLET/test/masks"
 
 # results + experiment naming
-experiment_id: "2026-02-24_openclip_vitl14_triplet_frozen"
+experiment_id: "2026-02-26_openclip_vitl14_triplet_fullft"
 results_root: "/home/cfuste/data/DINO-LoRA/openclip/seg"
-task_type: "triplet-lora"
+task_type: "triplet-fullft"
 
 # stitched dataset already shares a naming scheme between images/masks
 dataset:
@@ -37,17 +37,17 @@ num_classes: 2
 
 
 # ---- LoRA ----
-use_lora: true
+use_lora: false
 lora_rank: 16
 lora_alpha: 32
 lora:
-  enabled: true
+  enabled: false
   target_policy: vit_attention_only
   layer_selection: all
   exclude: [head, decoder, seg_head]
   compatibility_mode: true
 
-full_finetune: false
+full_finetune: true
 
 # ---- training ----
 batch_size: 2

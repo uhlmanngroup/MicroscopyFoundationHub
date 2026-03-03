@@ -20,6 +20,7 @@ class ResizeSpec:
     Normalized representation of the `img_size` config knob used across the repo.
 
     Modes:
+        - native:       Keep original size (H, W) unchanged.
         - fixed:        Always resize to (H, W).
         - longest_edge: Scale so max(H, W) == `target_long_edge` and snap each side
                         to a multiple of `patch_multiple`.
@@ -32,6 +33,8 @@ class ResizeSpec:
     rounding: str = "floor"  # floor, ceil, round
 
     def describe(self) -> str:
+        if self.mode == "native":
+            return "native"
         if self.mode == "fixed":
             return f"fixed {self.size}"
         return (
@@ -82,9 +85,11 @@ def parse_img_size_config(cfg: Any, default_patch_multiple: int = 14) -> ResizeS
         )
 
     if isinstance(cfg, Mapping):
-        mode = cfg.get("mode", "fixed")
-        rounding = cfg.get("rounding", "floor")
+        mode = str(cfg.get("mode", "fixed")).lower()
+        rounding = str(cfg.get("rounding", "floor")).lower()
         patch_multiple = int(cfg.get("patch_multiple", default_patch_multiple))
+        if mode == "native":
+            return ResizeSpec(mode="native", size=None, patch_multiple=1, rounding="round")
         if mode == "fixed":
             size = cfg.get("size", None)
             if size is None:
@@ -126,6 +131,9 @@ def compute_resized_hw(orig_hw: Tuple[int, int], spec: ResizeSpec) -> Tuple[int,
         if spec.size is None:
             raise ValueError("ResizeSpec(mode='fixed') is missing 'size'")
         return spec.size
+
+    if spec.mode == "native":
+        return h, w
 
     if spec.mode != "longest_edge":
         raise ValueError(f"Unknown resize mode '{spec.mode}'")

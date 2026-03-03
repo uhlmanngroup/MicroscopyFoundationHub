@@ -18,6 +18,7 @@ class DrosoSegDataset(PairedDirsSegDataset):
         recursive=True,
         mask_prefix="",
         mask_suffix="",
+        center_crop_size=None,
     ):
         super().__init__(
             image_dir=image_dir,
@@ -31,4 +32,5 @@ class DrosoSegDataset(PairedDirsSegDataset):
             mask_prefix=mask_prefix,
             mask_suffix=mask_suffix,
             recursive=recursive,
+            center_crop_size=center_crop_size,
         )

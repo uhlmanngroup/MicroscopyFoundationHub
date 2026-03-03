@@ -76,7 +76,7 @@ def extract_features_from_folder(
     Run the configured DINO backbone on all images in a folder and return .npz features.
 
     Assumptions:
-    - Images are already in the size/formad used for EM segmentation.
+    - Images are already in the geometry used for the current modality pipeline.
     - em_dino_unsup_transforms applies ToTensor and ImageNet normalization.
 
     Args:
@@ -89,8 +89,8 @@ def extract_features_from_folder(
     Returns:
         features:            [N, C] float32 (global-average-pooled over H', W')
         image_paths:         [N] object array of strings (paths to images)
-        dataset_ids:         [N] int32 (0=lucchi, 1=droso)
-        dataset_names:       [N] object array of strings ("lucchi" or "droso")
+        dataset_ids:         [N] int32 (label ids inferred from filename prefixes)
+        dataset_names:       [N] object array of strings (dataset labels)
         dataset_name_to_id:  [K] object array of "name:id" strings
         size:                [1] object array size of the DINO model, e.g. ["base"]
         checkpoint_path: optional checkpoint containing LoRA weights to load.

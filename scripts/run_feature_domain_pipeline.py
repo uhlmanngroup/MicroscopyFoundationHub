@@ -95,7 +95,7 @@ def _resolve_features_output_path(cfg: dict[str, Any]) -> Path:
 
     raise ValueError(
         "Could not infer features output path. Provide either "
-        "(experiment_id + results_root [+ task_type]) or data.output_path."
+        "(experiment_id + results_root [+ modality] [+ task_type]) or data.output_path."
     )
 
 

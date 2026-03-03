@@ -1,0 +1,68 @@
+# Environment: cluster (UZH Science) - DeepBacs paired dataset
+
+# ---- I/O ----
+train_img_dir: "/home/cfuste/data/datasets/deepbacs/paired/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/deepbacs/paired/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/test/masks"
+
+# ---- results ----
+experiment_id: "2026-03-03_deepbacs_paired_openclip_vitl14_lora_seg"
+results_root: "/home/cfuste/data/DINO-LoRA/openclip"
+task_type: "seg"
+modality: "deepbacs"
+deepbacs_center_crop_size: 448
+
+dataset:
+  type: paired
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+backbone:
+  name: openclip
+  model: "ViT-L-14"
+  pretrained: "laion2b_s32b_b82k"
+  weights: ""
+  preprocess:
+    preset: em
+dino_size: "ViT-L-14"
+img_size:
+  mode: native
+num_classes: 2
+
+# ---- fine-tuning ----
+use_lora: true
+full_finetune: false
+lora_rank: 16
+lora_alpha: 32
+lora:
+  enabled: true
+  target_policy: vit_attention_only
+  layer_selection: all
+  exclude: [head, decoder, seg_head]
+  compatibility_mode: true
+
+# ---- training ----
+batch_size: 2
+epochs: 1000
+patience: 20
+lr: 0.00005
+weight_decay: 0.0001
+num_workers: 4
+device: auto
+amp: false
+val_ratio: 0.1
+split_seed: 42
+data_augmentation: false
+data_augmentation_prob: 0.5
+clahe_norm: false
+
+# ---- loss ----
+loss: dice
+
+# ---- safety / export ----
+clip_grad_norm: 1.0
+binarize: true
+binarize_threshold: 0

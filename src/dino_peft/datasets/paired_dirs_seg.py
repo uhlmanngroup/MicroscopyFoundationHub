@@ -11,6 +11,40 @@ from dino_peft.utils.image_size import (
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
+
+def _parse_center_crop_size(center_crop_size):
+    if center_crop_size is None:
+        return None
+    if isinstance(center_crop_size, int):
+        if center_crop_size <= 0:
+            raise ValueError(f"center_crop_size must be positive, got {center_crop_size}")
+        return (center_crop_size, center_crop_size)
+    if isinstance(center_crop_size, (tuple, list)):
+        if len(center_crop_size) != 2:
+            raise ValueError(
+                f"center_crop_size tuple/list must have len 2, got {center_crop_size}"
+            )
+        h, w = int(center_crop_size[0]), int(center_crop_size[1])
+        if h <= 0 or w <= 0:
+            raise ValueError(f"center_crop_size values must be positive, got {center_crop_size}")
+        return (h, w)
+    raise TypeError(
+        "center_crop_size must be None, int, or tuple/list of length 2 "
+        f"(got {type(center_crop_size)})"
+    )
+
+
+def _center_crop_box(width: int, height: int, crop_w: int, crop_h: int):
+    if crop_w > width or crop_h > height:
+        raise ValueError(
+            f"Requested center crop ({crop_w}, {crop_h}) is larger than image ({width}, {height})"
+        )
+    left = (width - crop_w) // 2
+    top = (height - crop_h) // 2
+    right = left + crop_w
+    bottom = top + crop_h
+    return (left, top, right, bottom)
+
 def _list_files(root: Path, recursive: bool):
     pattern = "**/*" if recursive else "*"
     return sorted([p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() in IMG_EXTS])
@@ -45,6 +79,7 @@ class PairedDirsSegDataset(Dataset):
         mask_prefix="",
         mask_suffix="",
         recursive=False,
+        center_crop_size=None,
     ):
         self.image_dir = Path(image_dir)
         self.mask_dir  = Path(mask_dir)
@@ -53,6 +88,7 @@ class PairedDirsSegDataset(Dataset):
         self.binarize  = bool(binarize)
         self.thresh    = int(binarize_threshold)
         self.resize_spec = parse_img_size_config(img_size)
+        self.center_crop_size = _parse_center_crop_size(center_crop_size)
 
         imgs  = _list_files(self.image_dir, recursive)
         masks = _list_files(self.mask_dir,  recursive)
@@ -123,10 +159,6 @@ class PairedDirsSegDataset(Dataset):
         name = ip.stem
         # image
         img = self._load_rgb(ip)
-        target_hw = compute_resized_hw((img.height, img.width), self.resize_spec)
-        target_wh = (target_hw[1], target_hw[0])
-        if img.size != target_wh:
-            img = img.resize(target_wh, Image.BICUBIC)
 
         # --- MASK: force single channel ---
         mask = Image.open(mp)
@@ -143,6 +175,28 @@ class PairedDirsSegDataset(Dataset):
             except Exception:
                 # fallback: take first channel if convert fails (e.g., unusual mode)
                 mask = mask.split()[0]
+
+        # Optional aligned center crop for both image and mask.
+        if self.center_crop_size is not None:
+            crop_h, crop_w = self.center_crop_size
+            if img.size != mask.size:
+                raise ValueError(
+                    "center_crop_size requires matching image/mask sizes before crop. "
+                    f"Got image={img.size} mask={mask.size} for '{ip.name}'."
+                )
+            box = _center_crop_box(
+                width=img.width,
+                height=img.height,
+                crop_w=crop_w,
+                crop_h=crop_h,
+            )
+            img = img.crop(box)
+            mask = mask.crop(box)
+
+        target_hw = compute_resized_hw((img.height, img.width), self.resize_spec)
+        target_wh = (target_hw[1], target_hw[0])
+        if img.size != target_wh:
+            img = img.resize(target_wh, Image.BICUBIC)
         mask = mask.resize(target_wh, Image.NEAREST)
 
         # transforms

@@ -116,9 +116,30 @@ class SegTrainer:
             "mask_fill": 0,
         }
 
-        self.img_size_cfg = deepcopy(self.cfg.get("img_size", DEFAULT_IMG_SIZE_CFG))
-        if "img_size" not in self.cfg:
-            print("[SegTrainer] img_size not set in config; defaulting to longest_edge=1022.")
+        self.modality = str(self.cfg.get("modality", "em")).strip().lower() or "em"
+        self.cfg["modality"] = self.modality
+        self.deepbacs_center_crop_size = int(self.cfg.get("deepbacs_center_crop_size", 448))
+        if self.deepbacs_center_crop_size <= 0:
+            raise ValueError(
+                f"deepbacs_center_crop_size must be positive, got {self.deepbacs_center_crop_size}"
+            )
+        self.cfg["deepbacs_center_crop_size"] = self.deepbacs_center_crop_size
+
+        if self.modality == "deepbacs":
+            requested_img_size = self.cfg.get("img_size")
+            requested_mode = None
+            if isinstance(requested_img_size, dict):
+                requested_mode = str(requested_img_size.get("mode", "")).lower()
+            if requested_mode != "native":
+                print(
+                    "[SegTrainer] modality=deepbacs forces img_size.mode='native' "
+                    "(no resizing in pipeline)."
+                )
+            self.img_size_cfg = {"mode": "native"}
+        else:
+            self.img_size_cfg = deepcopy(self.cfg.get("img_size", DEFAULT_IMG_SIZE_CFG))
+            if "img_size" not in self.cfg:
+                print("[SegTrainer] img_size not set in config; defaulting to longest_edge=1022.")
         self.cfg["img_size"] = deepcopy(self.img_size_cfg)
 
         # --- seed (repro) ---
@@ -151,6 +172,7 @@ class SegTrainer:
             self.out_dir,
             {
                 "task_type": task_type,
+                "modality": self.modality,
                 "device": str(self.device),
                 "img_size": self.cfg.get("img_size"),
                 "backbone_name": backbone_cfg.get("name"),
@@ -160,6 +182,7 @@ class SegTrainer:
                 "data_augmentation_prob": self.data_augmentation_prob,
                 "augmentation_policy": self.aug_policy,
                 "clahe_norm": self.clahe_norm,
+                "deepbacs_center_crop_size": self.deepbacs_center_crop_size,
             },
         )
 
@@ -184,6 +207,8 @@ class SegTrainer:
             dataset_params.setdefault("image_prefix", "mask")
         elif dataset_type == "droso":
             dataset_params.setdefault("recursive", True)
+        if self.modality == "deepbacs":
+            dataset_params["center_crop_size"] = self.deepbacs_center_crop_size
         dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 
         def _build_dataset(img_dir, mask_dir, transform):
@@ -538,11 +563,13 @@ class SegTrainer:
                 "max_epochs": int(self.epochs),
                 "patience": int(self.patience),
                 "seed": int(self.seed),
+                "modality": self.modality,
                 "data_augmentation": self.data_augmentation,
                 "data_augmentation_prob": self.data_augmentation_prob,
                 "augmentation_policy": self.aug_policy,
                 "augmented_images_last_epoch": int(augmented_images_last_epoch),
                 "augmented_images_total": int(augmented_images_total),
                 "clahe_norm": self.clahe_norm,
+                "deepbacs_center_crop_size": int(self.deepbacs_center_crop_size),
             },
         )

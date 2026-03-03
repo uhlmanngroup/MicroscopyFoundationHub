@@ -29,6 +29,10 @@ DISPLAY_NAME_MAP = {
     "droso": "VNC",
     "lucchi": "Lucchi++",
     "kasthuri": "Kasthuri++",
+    "deepbacs": "DeepBacs",
+    "fluorescence": "Fluorescence",
+    "phasecontrast": "Phase Contrast",
+    "brightfield": "Brightfield",
 }
 
 def _display_name(value):
@@ -61,7 +65,11 @@ def _extract_sequence_and_z(path: str) -> tuple[int | None, int | None]:
     seq = None
     z_plane = None
 
-    seq_match = re.search(r"(droso|lucchi|kasthuri)[^0-9]*([0-9]+)", stem, flags=re.IGNORECASE)
+    seq_match = re.search(
+        r"(droso|lucchi|kasthuri|deepbacs|fluorescence|phasecontrast|brightfield)[^0-9]*([0-9]+)",
+        stem,
+        flags=re.IGNORECASE,
+    )
     if seq_match:
         seq = int(seq_match.group(2))
     else:

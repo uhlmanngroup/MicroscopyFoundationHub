@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate EM segmentation checkpoints.
+"""Evaluate microscopy segmentation checkpoints.
 
 Example (local):
     python scripts/eval_em_seg.py --cfg configs/mac/lucchi_dinov2_lora_mac.yaml
@@ -67,8 +67,28 @@ def pad_collate(batch):
     return torch.stack(padded_imgs), torch.stack(padded_masks), list(names)
 
 
+def _resolve_modality(cfg: dict) -> str:
+    modality = str(cfg.get("modality", "em")).strip().lower() or "em"
+    cfg["modality"] = modality
+    return modality
+
+
 def _resolve_img_size(cfg: dict):
+    modality = _resolve_modality(cfg)
     img_size_cfg = cfg.get("img_size")
+    if modality == "deepbacs":
+        requested_mode = None
+        if isinstance(img_size_cfg, dict):
+            requested_mode = str(img_size_cfg.get("mode", "")).lower()
+        if requested_mode != "native":
+            print(
+                "[eval_em_seg] modality=deepbacs forces img_size.mode='native' "
+                "(no resizing in pipeline)."
+            )
+        img_size_cfg = {"mode": "native"}
+        cfg["img_size"] = deepcopy(img_size_cfg)
+        return img_size_cfg
+
     if img_size_cfg is None:
         img_size_cfg = deepcopy(DEFAULT_IMG_SIZE_CFG)
         cfg["img_size"] = deepcopy(img_size_cfg)
@@ -78,6 +98,7 @@ def _resolve_img_size(cfg: dict):
 
 def build_dataset_from_cfg(cfg, split: str, transform):
     img_size_cfg = _resolve_img_size(cfg)
+    modality = _resolve_modality(cfg)
     dataset_cfg = cfg.get("dataset", {})
     dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
     dataset_params = dict(dataset_cfg.get("params", {}))
@@ -98,6 +119,9 @@ def build_dataset_from_cfg(cfg, split: str, transform):
         dataset_params.setdefault("image_prefix", "mask")
     elif dataset_type == "droso":
         dataset_params.setdefault("recursive", True)
+    if modality == "deepbacs":
+        deepbacs_crop = int(cfg.get("deepbacs_center_crop_size", 448))
+        dataset_params["center_crop_size"] = deepbacs_crop
     dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 
     kwargs = {
@@ -288,6 +312,7 @@ def _pick_device():
 
 def _build_dataset(cfg, split: str, transform):
     img_size_cfg = _resolve_img_size(cfg)
+    modality = _resolve_modality(cfg)
     split = split.lower()
     img_key = f"{split}_img_dir"
     mask_key = f"{split}_mask_dir"
@@ -297,6 +322,9 @@ def _build_dataset(cfg, split: str, transform):
     dataset_cfg = cfg.get("dataset", {})
     dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
     params = dataset_cfg.get("params") or {}
+    if modality == "deepbacs":
+        params = dict(params)
+        params["center_crop_size"] = int(cfg.get("deepbacs_center_crop_size", 448))
     common = dict(
         image_dir=cfg[img_key],
         mask_dir=cfg[mask_key],
@@ -313,6 +341,7 @@ def _build_dataset(cfg, split: str, transform):
             mask_prefix=params.get("mask_prefix", ""),
             mask_suffix=params.get("mask_suffix", ""),
             recursive=bool(params.get("recursive", False)),
+            center_crop_size=params.get("center_crop_size"),
         )
     elif dataset_type == "lucchi":
         return LucchiSegDataset(
@@ -320,6 +349,7 @@ def _build_dataset(cfg, split: str, transform):
             recursive=bool(params.get("recursive", False)),
             zfill_width=int(params.get("zfill_width", 4)),
             image_prefix=params.get("image_prefix", "mask"),
+            center_crop_size=params.get("center_crop_size"),
         )
     elif dataset_type == "droso":
         return DrosoSegDataset(
@@ -327,6 +357,7 @@ def _build_dataset(cfg, split: str, transform):
             recursive=bool(params.get("recursive", True)),
             mask_prefix=params.get("mask_prefix", ""),
             mask_suffix=params.get("mask_suffix", ""),
+            center_crop_size=params.get("center_crop_size"),
         )
     else:
         raise ValueError(
@@ -383,6 +414,11 @@ def main():
     ckpt = torch.load(ckpt_path, map_location=device)
     ckpt_cfg = ckpt.get("cfg", {}) or {}
     eval_cfg = ckpt_cfg if ckpt_cfg else cfg
+    modality = _resolve_modality(eval_cfg)
+    deepbacs_crop = int(eval_cfg.get("deepbacs_center_crop_size", 448))
+    if deepbacs_crop <= 0:
+        raise ValueError(f"deepbacs_center_crop_size must be positive, got {deepbacs_crop}")
+    eval_cfg["deepbacs_center_crop_size"] = deepbacs_crop
     if ckpt_cfg:
         print("[eval_em_seg] using cfg from checkpoint for model/data settings.")
     lora_cfg_source = ckpt_cfg if ckpt_cfg else cfg
@@ -485,6 +521,8 @@ def main():
             "foreground_iou": float(iou_f),
             "foreground_dice": float(dice_f),
             "num_classes": int(eval_cfg["num_classes"]),
+            "modality": modality,
+            "deepbacs_center_crop_size": deepbacs_crop,
         },
     )
 

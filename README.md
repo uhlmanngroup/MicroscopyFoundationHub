@@ -30,12 +30,14 @@ python scripts/analysis/summarize_seg_results.py --root /path/to/results/seg
 - All parameters live in YAML under `configs/`. CLI flags and sbatch env vars only override config values.
 - Many configs contain absolute paths from the author's machines (for example `/Users/cfuste/...` or `/home/cfuste/...`). Keep them if you use the same layout, otherwise update them for your environment.
 - See `configs/README.md` for the full configuration map and environment YAMLs.
+- Use `modality: em` (default) or `modality: deepbacs` to separate experiment outputs and preprocessing policy.
 
 **Common Workflows**
 - Train: `python scripts/train_em_seg.py --cfg configs/mac/...yaml`
 - Eval: `python scripts/eval_em_seg.py --cfg configs/mac/...yaml`
 - Summaries: `python scripts/analysis/summarize_seg_results.py --root /path/to/results/seg`
 - Summary plots: `python scripts/analysis/plot_seg_summary.py --summary-dir /path/to/results/seg/summary`
+- Optional instance postprocess (from semantic checkpoint): `python scripts/analysis/postprocess_instance_eval.py --cfg configs/cluster/deepbacs_single_dinov2_cluster.yaml`
 - Feature extraction: `python scripts/extract_features.py --cfg configs/mac/em_unsupervised_features_mac.yaml`
 - PCA/UMAP: `python scripts/run_pca.py --cfg configs/mac/em_pca_mac.yaml`
 - OOD detection: `python scripts/ood_detection.py --cfg configs/mac/ood_detection_mac.yaml`
@@ -46,6 +48,7 @@ For a full list of entrypoints and their purpose, see `scripts/README.md`.
 
 **Cluster (SLURM)**
 - Train + eval (single run): `sbatch slurm/single_lucchi_dinov2.sbatch configs/cluster/lucchi_dinov2_cluster.yaml`
+- DeepBacs example config (cluster): `configs/cluster/deepbacs_single_dinov2_cluster.yaml`
 - Feature grids: `sbatch slurm/feat_analysis_paired.sbatch`
 - Summaries: `sbatch slurm/summarize_seg_results.sbatch`
 - Param counts: `sbatch slurm/param_counts.sbatch`
@@ -61,6 +64,10 @@ For a full list of entrypoints and their purpose, see `scripts/README.md`.
 - Head-only (frozen backbone): set `use_lora: false` and omit `full_finetune`.
 - Train-time augmentation: set `data_augmentation: true` to enable train-only online `flip -> random shift`; tune `data_augmentation_prob` (default `0.5`).
 - CLAHE preprocessing: set `clahe_norm: true` to apply subtle CLAHE on all splits (train/val/test) before ImageNet normalization.
+
+**Modality Notes**
+- `modality: em`: existing EM behavior/configs.
+- `modality: deepbacs`: pipeline enforces `img_size.mode: native` and a paired center crop of `448x448` (image + mask) for train/val/test. This avoids resizing artifacts and keeps inputs compatible with patch sizes 14 and 16.
 
 **DINOv3 Weights**
 
@@ -95,7 +102,7 @@ All runs share a common results layout driven by the YAML config. Each config mu
 Outputs land at:
 
 ```
-<results_root>/<task_type>/<experiment_id>/
+<results_root>/<modality>/<task_type>/<experiment_id>/
   config_used.yaml
   run_info.txt
   metrics.json
@@ -152,7 +159,7 @@ For usability purposes, the two datasets are composed into:
   mapping.csv
 ```
 
-To build that layout, edit paths in `scripts/data/compose_em_datasets.py` and run:
+To build the EM composed layout, edit paths in `scripts/data/compose_em_datasets.py` and run:
 ```bash
 python scripts/data/compose_em_datasets.py
 ```

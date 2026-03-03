@@ -29,7 +29,7 @@ DEFAULT_CFG_PATH = (
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Extract DINO features for EM datasets.")
+    ap = argparse.ArgumentParser(description="Extract DINO features for microscopy datasets.")
     ap.add_argument(
         "--cfg",
         "--config",
@@ -89,6 +89,8 @@ def main() -> None:
     print(f"[extract_features] Using config file: {cfg_path}")
 
     cfg = load_config(cfg_path)
+    modality = str(cfg.get("modality", "em")).strip().lower() or "em"
+    cfg["modality"] = modality
     data_cfg = cfg.get("data", {})
     model_cfg = cfg.get("model", {})
     runtime_cfg = cfg.get("runtime", {})
@@ -99,7 +101,18 @@ def main() -> None:
     if checkpoint_path and not checkpoint_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    if "img_size" not in runtime_cfg:
+    if modality == "deepbacs":
+        requested_img_size = runtime_cfg.get("img_size")
+        requested_mode = None
+        if isinstance(requested_img_size, dict):
+            requested_mode = str(requested_img_size.get("mode", "")).lower()
+        if requested_mode != "native":
+            print(
+                "[extract_features] modality=deepbacs forces runtime.img_size.mode='native' "
+                "(no resizing in pipeline)."
+            )
+        img_size_cfg = {"mode": "native"}
+    elif "img_size" not in runtime_cfg:
         img_size_cfg = deepcopy(DEFAULT_IMG_SIZE_CFG)
         print("[extract_features] img_size not set in config; defaulting to longest_edge=1022.")
     else:
@@ -124,6 +137,7 @@ def main() -> None:
             run_dir,
             {
                 "task_type": task_type,
+                "modality": modality,
                 "device": device,
                 "img_size": img_size_cfg,
                 "backbone_name": backbone_cfg.get("name"),
@@ -147,6 +161,7 @@ def main() -> None:
     print(f"[extract_features] batch_size = {batch_size}")
     print(f"[extract_features] num_workers= {num_workers}")
     print(f"[extract_features] device     = {device}")
+    print(f"[extract_features] modality   = {modality}")
     print(f"[extract_features] img_size   = {img_size_cfg}")
     if checkpoint_path:
         print(f"[extract_features] checkpoint= {checkpoint_path}")
@@ -169,6 +184,7 @@ def main() -> None:
             to_save[k] = v.detach().cpu().numpy()
         else:
             to_save[k] = v
+    to_save["modality"] = np.array([modality], dtype=object)
 
     np.savez_compressed(out_path, **to_save)
 
@@ -190,6 +206,7 @@ def main() -> None:
                 "backbone_variant": backbone_cfg.get("variant"),
                 "dino_size": dino_size,
                 "data_dir": data_dir,
+                "modality": modality,
             },
         )
 

@@ -39,6 +39,7 @@ class RunRecord:
     run_dir: Path
     rel_run_dir: str
     experiment_id: str
+    modality: Optional[str]
     task_type: Optional[str]
     backbone_name: Optional[str]
     backbone_variant: Optional[str]
@@ -155,6 +156,8 @@ def _canonical_dataset_label(text: Optional[str]) -> Optional[str]:
         return "Triplet"
     if "paired" in s:
         return "Paired"
+    if "deepbacs" in s:
+        return "DeepBacs"
     return None
 
 
@@ -222,6 +225,7 @@ def collect_runs(
                 run_dir=run_dir,
                 rel_run_dir=safe_relative_to(run_dir, root),
                 experiment_id=cfg.get("experiment_id", run_dir.name),
+                modality=str(cfg.get("modality", "em")).strip().lower() or "em",
                 task_type=cfg.get("task_type"),
                 backbone_name=backbone_cfg.get("name"),
                 backbone_variant=backbone_cfg.get("variant"),
@@ -261,15 +265,17 @@ def compute_stats(values: Iterable[float]) -> Tuple[Optional[float], Optional[fl
 
 
 def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
-    grouped: Dict[Tuple[str, str, str, bool, bool, str], Dict[str, List[float]]] = {}
-    counts: Dict[Tuple[str, str, str, bool, bool, str], int] = {}
+    grouped: Dict[Tuple[str, str, str, str, bool, bool, str], Dict[str, List[float]]] = {}
+    counts: Dict[Tuple[str, str, str, str, bool, bool, str], int] = {}
 
     for record in run_records:
         ds_label = str(record.dataset_label or "Unknown")
+        modality = str(record.modality or "em").lower()
         task_type = str(record.task_type or "unknown")
         ds_type = (record.dataset_type or "unknown").lower()
         key = (
             ds_label,
+            modality,
             task_type,
             ds_type,
             record.use_lora,
@@ -293,11 +299,12 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
     }
 
     def _sort_key(
-        item: Tuple[Tuple[str, str, str, bool, bool, str], Dict[str, List[float]]]
+        item: Tuple[Tuple[str, str, str, str, bool, bool, str], Dict[str, List[float]]]
     ):
-        (ds_label, task_type, ds_type, use_lora, full_finetune, size), _ = item
+        (ds_label, modality, task_type, ds_type, use_lora, full_finetune, size), _ = item
         mode = infer_training_mode(use_lora, full_finetune)
         return (
+            modality,
             ds_label.lower(),
             task_type,
             ds_type,
@@ -308,9 +315,10 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
 
     aggregates: List[Dict] = []
     for key, metric_lists in sorted(grouped.items(), key=_sort_key):
-        dataset_label, task_type, dataset_type, use_lora, full_finetune, size = key
+        dataset_label, modality, task_type, dataset_type, use_lora, full_finetune, size = key
         row: Dict[str, Optional[float]] = {
             "dataset_label": dataset_label,
+            "modality": modality,
             "task_type": task_type,
             "dataset_type": dataset_type,
             "use_lora": use_lora,
@@ -340,6 +348,7 @@ def serialize_run_record(record: RunRecord) -> Dict[str, object]:
         "run_dir": str(record.run_dir),
         "rel_run_dir": record.rel_run_dir,
         "experiment_id": record.experiment_id,
+        "modality": record.modality,
         "task_type": record.task_type,
         "backbone_name": record.backbone_name,
         "backbone_variant": record.backbone_variant,
@@ -386,6 +395,7 @@ def main() -> None:
         "run_dir",
         "rel_run_dir",
         "experiment_id",
+        "modality",
         "task_type",
         "use_lora",
         "full_finetune",
@@ -408,6 +418,7 @@ def main() -> None:
     ]
     summary_fieldnames = [
         "dataset_label",
+        "modality",
         "dataset_type",
         "task_type",
         "use_lora",

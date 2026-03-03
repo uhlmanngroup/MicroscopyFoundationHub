@@ -156,10 +156,15 @@ def _canonical_dataset_label(text: Optional[str]) -> Optional[str]:
         return "Triplet"
     if "paired" in low:
         return "Paired"
+    if "deepbacs" in low:
+        return "DeepBacs"
     return s
 
 
 def attach_dataset_labels(df: pd.DataFrame) -> pd.DataFrame:
+    if "modality" not in df.columns:
+        df["modality"] = "em"
+    df["modality"] = df["modality"].astype(str).str.strip().str.lower()
     if "dataset_type" not in df.columns:
         df["dataset_type"] = "unknown"
     df["dataset_type"] = df["dataset_type"].astype(str).str.strip().str.lower()
@@ -179,7 +184,14 @@ def attach_dataset_labels(df: pd.DataFrame) -> pd.DataFrame:
         return "Unknown"
 
     df["dataset_label"] = df.apply(_pick_label, axis=1)
-    df["dataset_title"] = df["dataset_label"]
+    df["dataset_title"] = df.apply(
+        lambda row: (
+            row["dataset_label"]
+            if row["modality"] in {"", "unknown", "nan", "none", "null"}
+            else f"{row['dataset_label']} ({row['modality']})"
+        ),
+        axis=1,
+    )
     return df
 
 
@@ -565,7 +577,7 @@ def export_interactive_dashboard(bundle: SummaryBundle, output_path: Path) -> No
         ) from exc
 
     html_sections: List[str] = [
-        "<h1 style='font-family:Helvetica,Arial,sans-serif;'>DINO-EM summary dashboard</h1>"
+        "<h1 style='font-family:Helvetica,Arial,sans-serif;'>Microscopy segmentation summary dashboard</h1>"
     ]
     dino_order = bundle.metadata.get("dino_order") or build_dino_order(bundle.summary["dino_size"].unique())
     category_orders = {"dino_size": dino_order, "use_lora_label": USE_LORA_LABELS}
@@ -621,7 +633,7 @@ def export_interactive_dashboard(bundle: SummaryBundle, output_path: Path) -> No
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     html = "\n".join(html_sections)
-    shell = f"<!doctype html><html><head><meta charset='utf-8'><title>DINO-EM plots</title></head><body>{html}</body></html>"
+    shell = f"<!doctype html><html><head><meta charset='utf-8'><title>Microscopy segmentation plots</title></head><body>{html}</body></html>"
     output_path.write_text(shell, encoding="utf-8")
     print(f"[info] Wrote interactive dashboard to {output_path}")
 

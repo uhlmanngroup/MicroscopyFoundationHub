@@ -7,13 +7,21 @@ Absolute paths in some examples are user-specific. Update them for your environm
 - `scripts/train_em_seg.py`: train segmentation from a YAML config
 - `scripts/eval_em_seg.py`: evaluate a trained run and write metrics/figs
 
+Notes:
+- Segmentation run directories are now modality-aware via config key `modality` (`em` or `deepbacs`).
+- For `modality: deepbacs`, the pipeline enforces native size plus aligned center crop (`448x448`) for image/mask pairs.
+
 ## Analysis And Reporting
 - `scripts/analysis/summarize_seg_results.py`: aggregate run metrics into CSV/JSON
 - `scripts/analysis/plot_seg_summary.py`: generate summary plots from aggregates
 - `scripts/analysis/compare_ood_runs.py`: compare multiple OOD runs
 - `scripts/analysis/fancy_plot.py`: generate the Lucchi++ comparison figure
+- `scripts/analysis/postprocess_instance_eval.py`: optional instance/count metrics from semantic predictions (postprocess-only, no retraining)
 - `scripts/run_domain_analysis.py`: compute domain metrics on feature files
 - `scripts/run_pca.py`: PCA/UMAP on extracted features
+
+Postprocess example:
+- `python scripts/analysis/postprocess_instance_eval.py --cfg configs/cluster/deepbacs_single_dinov2_cluster.yaml --split test --iou-threshold 0.5`
 
 ## Features And OOD
 - `scripts/extract_features.py`: extract DINO features to NPZ
@@ -28,6 +36,7 @@ Absolute paths in some examples are user-specific. Update them for your environm
 - `scripts/data/compose_em_datasets.py`: build the paired Lucchi++/Droso dataset layout
 - `scripts/utils/move_result_logs.py`: backfill Slurm logs into run dirs
 - `scripts/utils/param_count_table.py`: parameter count table for backbones and LoRA
+- `scripts/utils/tile_paired_dirs.py`: tile paired image/mask folders into fixed-size patches (e.g., 512x512)
 
 ## Ablations
 - `scripts/ablation_paired_balance_dinov2.py`: balanced vs unbalanced paired ablation

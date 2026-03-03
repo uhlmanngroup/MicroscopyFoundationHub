@@ -124,7 +124,8 @@ base_exp = cfg.get("experiment_id") or default_out.name
 cfg["experiment_id"] = f"{base_exp}_{tag}"
 root = pathlib.Path(cfg.get("results_root", default_out.parent)).expanduser()
 cfg["results_root"] = str(root)
-out_dir = root / task_type / cfg["experiment_id"]
+modality = str(cfg.get("modality", "em")).strip().lower() or "em"
+out_dir = root / modality / task_type / cfg["experiment_id"]
 cfg["out_dir"] = str(out_dir)
 tmp = tempfile.NamedTemporaryFile(prefix=f"{tag}_", suffix=".yaml", delete=False)
 with open(tmp.name, "w") as f:

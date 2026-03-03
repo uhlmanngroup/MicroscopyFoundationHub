@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train EM segmentation with DINO backbones.
+"""Train microscopy segmentation with DINO-family backbones.
 
 Example (local):
     python scripts/train_em_seg.py --cfg configs/mac/lucchi_dinov2_lora_mac.yaml

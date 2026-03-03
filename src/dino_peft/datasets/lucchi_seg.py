@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Tuple
 
 # Reuse the robust I/O and tensor logic from your generic dataset
-from .paired_dirs_seg import PairedDirsSegDataset
+from .paired_dirs_seg import PairedDirsSegDataset, _parse_center_crop_size
 from dino_peft.utils.image_size import parse_img_size_config
 
 def _list_images(root: Path, recursive: bool) -> list[Path]:
@@ -42,6 +42,7 @@ class LucchiSegDataset(PairedDirsSegDataset):
         recursive=False,
         zfill_width: int = 4,
         image_prefix: str = "mask",   # default for Lucchi
+        center_crop_size=None,
     ):
         # We don't call super().__init__ because that would run its generic pairing.
         # Instead, we set the attributes it expects, then reuse its __getitem__ / _load_rgb.
@@ -52,6 +53,7 @@ class LucchiSegDataset(PairedDirsSegDataset):
         self.binarize  = bool(binarize)
         self.thresh    = int(binarize_threshold)
         self.resize_spec = parse_img_size_config(img_size)
+        self.center_crop_size = _parse_center_crop_size(center_crop_size)
 
         imgs  = _list_images(self.image_dir, recursive)
         masks = _list_images(self.mask_dir,  recursive)

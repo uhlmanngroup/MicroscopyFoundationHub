@@ -32,7 +32,8 @@ def resolve_run_dir(cfg: Mapping[str, Any], task_type: str) -> Path:
     task = task_type or cfg.get("task_type")
     if not task:
         raise ValueError("task_type must be provided either in cfg or as an argument")
-    return Path(results_root).expanduser() / task / exp_id
+    modality = str(cfg.get("modality", "em")).strip().lower() or "em"
+    return Path(results_root).expanduser() / modality / task / exp_id
 
 
 def setup_run_dir(
@@ -43,7 +44,7 @@ def setup_run_dir(
 ) -> Path:
     """
     Create and return the canonical run directory:
-    <results_root>/<task_type>/<experiment_id>
+    <results_root>/<modality>/<task_type>/<experiment_id>
     """
     run_dir = resolve_run_dir(cfg, task_type)
     run_dir.mkdir(parents=True, exist_ok=True)

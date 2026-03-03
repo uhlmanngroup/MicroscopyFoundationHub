@@ -128,14 +128,16 @@ def _build_training_cfg(base_cfg, variant: str, seed: int, out_root: Path | None
 
     base_exp = str(cfg.get("experiment_id", "ablation_paired_balance_dinov2"))
     task_type = str(cfg.get("task_type", "seg"))
+    modality = str(cfg.get("modality", "em")).strip().lower() or "em"
     results_root = Path(out_root) if out_root is not None else Path(cfg.get("results_root", "results"))
     cfg["results_root"] = str(results_root)
     cfg["task_type"] = task_type
+    cfg["modality"] = modality
     cfg["experiment_id"] = f"{base_exp}/{variant}/seed_{seed}"
 
-    run_dir = results_root / task_type / cfg["experiment_id"]
+    run_dir = results_root / modality / task_type / cfg["experiment_id"]
     cfg["out_dir"] = str(run_dir)
-    return cfg, results_root / task_type / base_exp
+    return cfg, results_root / modality / task_type / base_exp
 
 
 def _load_eval_model(cfg, ckpt_path: Path, device):

@@ -49,6 +49,45 @@ def _list_files(root: Path, recursive: bool):
     pattern = "**/*" if recursive else "*"
     return sorted([p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() in IMG_EXTS])
 
+
+def _rescale_grayscale_to_uint8(arr: np.ndarray) -> np.ndarray:
+    """
+    Robustly map a single grayscale image to uint8 using per-image percentiles.
+
+    This is only used for high-bit-depth microscopy images. Standard uint8 inputs
+    keep the legacy path unchanged.
+    """
+    arr = np.asarray(arr, dtype=np.float32)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 2D grayscale array, got shape {arr.shape}")
+
+    lo = float(np.quantile(arr, 0.001))
+    hi = float(np.quantile(arr, 0.999))
+    if hi <= lo:
+        lo = float(np.min(arr))
+        hi = float(np.max(arr))
+    if hi <= lo:
+        return np.zeros(arr.shape, dtype=np.uint8)
+
+    arr = np.clip((arr - lo) / (hi - lo), 0.0, 1.0)
+    return np.round(arr * 255.0).astype(np.uint8)
+
+
+def _pil_grayscale_to_rgb(img: Image.Image) -> Image.Image:
+    """
+    Preserve contrast for high-bit-depth grayscale images while keeping the
+    existing uint8 path unchanged for EM datasets.
+    """
+    arr = np.array(img)
+    if arr.ndim == 3:
+        arr = arr[..., 0]
+
+    if arr.dtype == np.uint8:
+        gray = img.convert("L")
+    else:
+        gray = Image.fromarray(_rescale_grayscale_to_uint8(arr), mode="L")
+    return Image.merge("RGB", (gray, gray, gray))
+
 class PairedDirsSegDataset(Dataset):
     """
     Pair images and masks from two folders.
@@ -146,9 +185,9 @@ class PairedDirsSegDataset(Dataset):
         if self.to_rgb:
             if img.mode == "RGB":
                 return img
-            # typical EM is grayscale; replicate to RGB
-            g = img.convert("L")
-            return Image.merge("RGB", (g, g, g))
+            # Typical EM is uint8 grayscale; some DeepBacs TIFFs are 16-bit and
+            # need per-image rescaling before converting to RGB.
+            return _pil_grayscale_to_rgb(img)
         else:
             return img
 

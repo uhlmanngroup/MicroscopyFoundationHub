@@ -28,6 +28,8 @@ EPOCHS=${EPOCHS:-}
 BATCH_SIZE=${BATCH_SIZE:-}
 NUM_WORKERS=${NUM_WORKERS:-}
 AMP=${AMP:-}
+SEED=${SEED:-}
+SPLIT_SEED=${SPLIT_SEED:-}
 RUN_TAG=${RUN_TAG:-smoke${SLURM_JOB_ID:-manual}}
 
 archive_slurm_log() {
@@ -48,10 +50,10 @@ archive_slurm_log() {
 }
 
 prepare_cfg() {
-  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" tag="$7" backbone_name="$8"
-  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$tag" "$backbone_name" <<'PY'
+  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" seed="$7" split_seed="$8" tag="$9" backbone_name="${10}"
+  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$seed" "$split_seed" "$tag" "$backbone_name" <<'PY'
 import sys, yaml, tempfile, pathlib
-base, size, epochs, batch, workers, amp, tag, backbone_name = sys.argv[1:]
+base, size, epochs, batch, workers, amp, seed, split_seed, tag, backbone_name = sys.argv[1:]
 cfg = yaml.safe_load(open(base))
 cfg["dino_size"] = size
 backbone = cfg.get("backbone") or {}
@@ -66,6 +68,10 @@ if workers:
     cfg["num_workers"] = max(0, int(workers))
 if amp:
     cfg["amp"] = amp.lower() not in ("0","false","no","off")
+if seed:
+    cfg["seed"] = int(seed)
+if split_seed:
+    cfg["split_seed"] = int(split_seed)
 tag = tag or "manual"
 task_type = cfg.get("task_type", "seg")
 default_out = pathlib.Path(cfg.get("out_dir", "runs/exp")).expanduser()
@@ -84,7 +90,7 @@ print(cfg["out_dir"])
 PY
 }
 
-mapfile -t prep < <(prepare_cfg "$CFG_PATH" "$BACKBONE_VARIANT" "$EPOCHS" "$BATCH_SIZE" "$NUM_WORKERS" "$AMP" "$RUN_TAG" "$BACKBONE_NAME")
+mapfile -t prep < <(prepare_cfg "$CFG_PATH" "$BACKBONE_VARIANT" "$EPOCHS" "$BATCH_SIZE" "$NUM_WORKERS" "$AMP" "$SEED" "$SPLIT_SEED" "$RUN_TAG" "$BACKBONE_NAME")
 RUNTIME_CFG="${prep[0]}"
 RUN_DIR="${prep[1]}"
 

@@ -39,7 +39,7 @@ full_finetune: false
 
 # ---- training ----
 batch_size: 2
-epochs: 5
+epochs: 1000
 patience: 20
 lr: 0.00005
 weight_decay: 0.0001

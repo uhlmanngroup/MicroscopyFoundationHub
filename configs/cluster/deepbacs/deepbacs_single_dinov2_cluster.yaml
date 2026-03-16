@@ -7,9 +7,9 @@ test_img_dir: "/home/cfuste/data/datasets/deepbacs/single/aureus/test/images"
 test_mask_dir: "/home/cfuste/data/datasets/deepbacs/single/aureus/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_aureus_dinov2_seg"
+experiment_id: "2026-03-03_deepbacs_aureus_dinov2_lora_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/seg"
-task_type: "aureus-frozen"
+task_type: "aureus-lora"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
 
@@ -34,7 +34,7 @@ img_size:
 num_classes: 2
 
 # ---- fine-tuning ----
-use_lora: false
+use_lora: true
 full_finetune: false
 
 # ---- training ----

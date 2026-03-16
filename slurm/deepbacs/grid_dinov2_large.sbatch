@@ -1,6 +1,6 @@
 #!/usr/bin/bash -l
 #SBATCH --job-name=deepbacs-aureus-dinov2l-frozen
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100
 #SBATCH --cpus-per-task=4
@@ -68,12 +68,6 @@ backbone = cfg.get("backbone") or {}
 backbone["name"] = backbone_name or backbone.get("name", "dinov2")
 backbone["variant"] = size
 cfg["backbone"] = backbone
-
-# Freeze backbone: no LoRA, no full fine-tune.
-cfg["use_lora"] = False
-cfg["full_finetune"] = False
-if "lora" in cfg and isinstance(cfg["lora"], dict):
-    cfg["lora"]["enabled"] = False
 
 if seed:
     cfg["seed"] = int(seed)

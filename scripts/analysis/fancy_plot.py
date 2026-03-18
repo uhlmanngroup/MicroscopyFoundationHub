@@ -2,8 +2,10 @@
 
 Example (local; absolute paths are user-specific):
     python scripts/analysis/fancy_plot.py
+    python scripts/analysis/fancy_plot.py --variant poster
 """
 
+import argparse
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -23,12 +25,57 @@ CONFIG = {
 }
 metric_col = CONFIG["metric_col"]
 
-# Colors
-supervised_color = "#B1C7E6"   # darker blue
-zeroshot_color   = "#5D91E3"   # lighter blue
-ours_color       = "#1f57ff"   # yellow
-improve_color    = "#35C759"   # green
-worse_color      = "#FF3B30"   # red
+STYLE_CONFIGS = {
+    "default": {
+        "figsize": (10, 6),
+        "colors": {
+            "Supervised": "#B1C7E6",
+            "Zero-shot": "#5D91E3",
+            "Ours": "#1f57ff",
+            "Improve": "#35C759",
+            "Worse": "#FF3B30",
+        },
+        "legend_labels": {
+            "Supervised": "Supervised baseline",
+            "Zero-shot": "Zero-shot baseline",
+            "Ours": "Ours (zero-shot)",
+            "Improve": "+LoRA",
+        },
+        "legend_kwargs": {
+            "loc": "upper center",
+            "bbox_to_anchor": (0.5, -0.12),
+            "ncol": 2,
+        },
+        "subplot_adjust": {"bottom": 0.18},
+        "title": "EM Segmentation – Foreground IoU comparison",
+        "output_name": "fancyplot.png",
+    },
+    "poster": {
+        "figsize": (11.5, 6),
+        "colors": {
+            "Supervised": "#9DA9BE",
+            "Zero-shot": "#7888A5",
+            "Ours": "#4F5D75",
+            "Improve": "#EF8354",
+            "Worse": "#FF3B30",
+        },
+        "legend_labels": {
+            "Supervised": "Supervised",
+            "Zero-shot": "Zero-shot",
+            "Ours": "Ours (frozen)",
+            "Improve": "+LoRA",
+        },
+        "legend_kwargs": {
+            "loc": "center left",
+            "bbox_to_anchor": (1.01, 0.5),
+            "ncol": 1,
+            "borderaxespad": 0.0,
+        },
+        "subplot_adjust": {"right": 0.78},
+        "title": None,
+        "output_name": "fancyplot_poster.png",
+    },
+}
 
 SIZE_RANK = {
     "tiny": 0,
@@ -93,6 +140,23 @@ def get_pair(df: pd.DataFrame, dataset_type: str) -> tuple[float, float]:
     ][metric_col].iloc[0]
 
     return base_val, lora_val
+
+
+def parse_args() -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="Generate the Lucchi++ comparison plot.")
+    ap.add_argument(
+        "--variant",
+        choices=sorted(STYLE_CONFIGS),
+        default="default",
+        help="Visual variant to render.",
+    )
+    ap.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional output path. Defaults to docs/media/<variant filename>.",
+    )
+    return ap.parse_args()
 
 summary_data = {}
 for label, filename in CONFIG["summary_files"].items():
@@ -166,114 +230,101 @@ plot_df["new_pct"] = plot_df["new"] * 100
 # Absolute difference in percentage points
 plot_df["delta_pct"] = plot_df["new_pct"] - plot_df["baseline_pct"]
 
-# === 5) Create the figure ===
-fig, ax = plt.subplots(figsize=(10, 6))
+def build_plot(style_name: str, output_path: Path) -> None:
+    style = STYLE_CONFIGS[style_name]
+    colors = style["colors"]
 
-y_pos = np.arange(len(plot_df))
+    fig, ax = plt.subplots(figsize=style["figsize"])
+    y_pos = np.arange(len(plot_df))
 
-text_positive = improve_color
-text_negative = worse_color
+    for i, row in plot_df.iterrows():
+        y = y_pos[i]
+        base_color = colors[row["group"]]
 
-for i, row in plot_df.iterrows():
-    y = y_pos[i]
+        ax.barh(
+            y,
+            row["baseline_pct"],
+            color=base_color,
+            edgecolor="none",
+        )
 
-    # Choose base color by group
-    if row["group"] == "Supervised":
-        base_color = supervised_color
-    elif row["group"] == "Zero-shot":
-        base_color = zeroshot_color
-    else:  # "Ours"
-        base_color = ours_color
+        if row["is_ours"] and pd.notnull(row["new"]):
+            if row["new"] >= row["baseline"]:
+                ax.barh(
+                    y,
+                    row["new_pct"] - row["baseline_pct"],
+                    left=row["baseline_pct"],
+                    color=colors["Improve"],
+                    edgecolor="none",
+                )
+            else:
+                ax.barh(
+                    y,
+                    row["baseline_pct"] - row["new_pct"],
+                    left=row["new_pct"],
+                    color=colors["Worse"],
+                    edgecolor="none",
+                )
 
-    # Base bar
-    ax.barh(
-        y,
-        row["baseline_pct"],
-        color=base_color,
-        edgecolor="none",
-    )
+            delta = row["delta_pct"]
+            if np.isfinite(delta):
+                sign = "+" if delta >= 0 else "−"
+                txt_color = colors["Improve"] if delta >= 0 else colors["Worse"]
+                ax.text(
+                    row["new_pct"] + 1,
+                    y,
+                    f"{sign}{abs(delta):.1f}%",
+                    va="center",
+                    ha="left",
+                    fontsize=10,
+                    color=txt_color,
+                )
 
-    # Overlay for our methods where we have LoRA
-    if row["is_ours"] and pd.notnull(row["new"]):
-        if row["new"] >= row["baseline"]:
-            # Improvement: green segment to the right
-            ax.barh(
-                y,
-                row["new_pct"] - row["baseline_pct"],
-                left=row["baseline_pct"],
-                color=improve_color,
-                edgecolor="none",
-            )
-        else:
-            # Worse: red segment on the left (new is smaller)
-            ax.barh(
-                y,
-                row["baseline_pct"] - row["new_pct"],
-                left=row["new_pct"],
-                color=worse_color,
-                edgecolor="none",
-            )
+    labels = [
+        ("★ " if is_ours else "") + lbl
+        for lbl, is_ours in zip(plot_df["label"], plot_df["is_ours"])
+    ]
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(labels)
+    ax.invert_yaxis()
 
-        # Text with +X.X% / -X.X%
-        delta = row["delta_pct"]
-        if np.isfinite(delta):
-            sign = "+" if delta >= 0 else "−"
-            txt_color = text_positive if delta >= 0 else text_negative
-            ax.text(
-                row["new_pct"] + 1,  # a bit to the right of the bar
-                y,
-                f"{sign}{abs(delta):.1f}%",
-                va="center",
-                ha="left",
-                fontsize=10,
-                color=txt_color,
-            )
+    ax.set_xlabel("Foreground IoU (IoUf) [%]")
+    ax.set_xlim(0, 102)
+    ax.set_xticks([0, 25, 50, 75, 100])
+    ax.xaxis.grid(True, linestyle="--", alpha=0.25)
+    ax.set_axisbelow(True)
 
-# === 6) Formatting ===
+    for _, g_data in plot_df.groupby("group_order"):
+        last_idx = g_data.index.max()
+        ax.axhline(last_idx + 0.5, color="lightgray", linewidth=1.0)
 
-# Y labels, with a star for our methods
-labels = []
-for lbl, is_ours in zip(plot_df["label"], plot_df["is_ours"]):
-    labels.append(("★ " if is_ours else "") + lbl)
+    legend_handles = [
+        Patch(color=colors["Supervised"], label=style["legend_labels"]["Supervised"]),
+        Patch(color=colors["Zero-shot"], label=style["legend_labels"]["Zero-shot"]),
+        Patch(color=colors["Ours"], label=style["legend_labels"]["Ours"]),
+        Patch(color=colors["Improve"], label=style["legend_labels"]["Improve"]),
+    ]
+    ax.legend(handles=legend_handles, frameon=False, **style["legend_kwargs"])
 
-ax.set_yticks(y_pos)
-ax.set_yticklabels(labels)
-ax.invert_yaxis()  # top row = first method
+    if style["title"]:
+        ax.set_title(style["title"])
 
-ax.set_xlabel("Foreground IoU (IoUf) [%]")
-ax.set_xlim(0, 102)  # a bit of margin for the +X.X% text
-ax.set_xticks([0, 25, 50, 75, 100])
+    plt.tight_layout()
+    plt.subplots_adjust(**style["subplot_adjust"])
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_path, dpi=300)
+    plt.close(fig)
 
-# Light vertical grid for readability
-ax.xaxis.grid(True, linestyle="--", alpha=0.25)
-ax.set_axisbelow(True)
 
-# Stronger group separators + optional group labels on the right
-for g_name, g_data in plot_df.groupby("group_order"):
-    last_idx = g_data.index.max()
-    ax.axhline(last_idx + 0.5, color="lightgray", linewidth=1.0)
+def main() -> None:
+    args = parse_args()
+    repo_root = Path(__file__).resolve().parents[2]
+    output_path = args.output
+    if output_path is None:
+        output_path = repo_root / "docs" / "media" / STYLE_CONFIGS[args.variant]["output_name"]
+    build_plot(args.variant, output_path)
+    print(f"Saved plot to {output_path}")
 
-# === Legend at the bottom ===
-legend_handles = [
-    Patch(color=supervised_color, label="Supervised baseline"),
-    Patch(color=zeroshot_color,   label="Zero-shot baseline"),
-    Patch(color=ours_color,       label="Ours (zero-shot)"),
-    Patch(color=improve_color,    label="+LoRA"),
-]
 
-ax.legend(
-    handles=legend_handles,
-    loc="upper center",
-    bbox_to_anchor=(0.5, -0.12),  # below the axes
-    ncol=2,
-    frameon=False,
-)
-
-ax.set_title("EM Segmentation – Foreground IoU comparison")
-
-plt.tight_layout()
-plt.subplots_adjust(bottom=0.18)  # extra space for legend
-repo_root = Path(__file__).resolve().parents[2]
-out_path = repo_root / "docs" / "media" / "fancyplot.png"
-out_path.parent.mkdir(parents=True, exist_ok=True)
-plt.savefig(out_path, dpi=300)
+if __name__ == "__main__":
+    main()

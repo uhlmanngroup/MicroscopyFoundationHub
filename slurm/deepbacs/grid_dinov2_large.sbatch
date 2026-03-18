@@ -86,8 +86,6 @@ tag = tag or "manual"
 task_type = cfg.get("task_type", "seg")
 default_out = pathlib.Path(cfg.get("out_dir", "runs/exp")).expanduser()
 exp_base = cfg.get("experiment_id") or default_out.name
-if "lora" in exp_base.lower():
-    exp_base = re.sub("lora", "frozen", exp_base, flags=re.IGNORECASE)
 cfg["experiment_id"] = f"{exp_base}_{tag}"
 root = pathlib.Path(cfg.get("results_root", default_out.parent)).expanduser()
 cfg["results_root"] = str(root)

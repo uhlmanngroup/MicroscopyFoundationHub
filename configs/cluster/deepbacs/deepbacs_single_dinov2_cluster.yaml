@@ -1,15 +1,15 @@
 # Environment: cluster (UZH Science) - DeepBacs single dataset
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/deepbacs/single/aureus/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/deepbacs/single/aureus/train/masks"
-test_img_dir: "/home/cfuste/data/datasets/deepbacs/single/aureus/test/images"
-test_mask_dir: "/home/cfuste/data/datasets/deepbacs/single/aureus/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/deepbacs/single/subtilis/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/deepbacs/single/subtilis/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/deepbacs/single/subtilis/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/deepbacs/single/subtilis/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_aureus_dinov2_lora_seg"
+experiment_id: "2026-03-18_deepbacs_subtilis_dinov2_fullft_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/seg"
-task_type: "aureus-lora"
+task_type: "subtilis-fullft"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
 
@@ -34,8 +34,8 @@ img_size:
 num_classes: 2
 
 # ---- fine-tuning ----
-use_lora: true
-full_finetune: false
+use_lora: false
+full_finetune: true
 
 # ---- training ----
 batch_size: 2

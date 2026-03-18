@@ -1,5 +1,5 @@
 #!/usr/bin/bash -l
-#SBATCH --job-name=deepbacs-dinov2l
+#SBATCH --job-name=deepbacs-paired-dinov2l
 #SBATCH --time=12:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100
@@ -21,7 +21,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
-BASE_CFG=${BASE_CFG:-configs/cluster/deepbacs/deepbacs_single_dinov2_cluster.yaml}
+BASE_CFG=${BASE_CFG:-configs/cluster/deepbacs/deepbacs_paired_dinov2_cluster.yaml}
 DINO_SIZE=${DINO_SIZE:-large}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov2}
 EPOCHS=${EPOCHS:-}
@@ -56,7 +56,6 @@ prepare_cfg() {
   local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" seed="$7" split_seed="$8" tag="$9" backbone_name="${10}"
   "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" "$seed" "$split_seed" "$tag" "$backbone_name" <<'PY'
 import pathlib
-import re
 import sys
 import tempfile
 import yaml

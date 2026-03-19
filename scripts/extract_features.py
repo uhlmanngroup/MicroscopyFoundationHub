@@ -100,6 +100,30 @@ def main() -> None:
     checkpoint_path = Path(checkpoint_path).expanduser() if checkpoint_path else None
     if checkpoint_path and not checkpoint_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    center_crop_size = runtime_cfg.get("center_crop_size")
+    if center_crop_size is not None:
+        if isinstance(center_crop_size, int):
+            if center_crop_size <= 0:
+                raise ValueError(f"runtime.center_crop_size must be positive, got {center_crop_size}")
+        elif isinstance(center_crop_size, (list, tuple)):
+            if len(center_crop_size) != 2:
+                raise ValueError(
+                    "runtime.center_crop_size list/tuple must have length 2 "
+                    f"(got {center_crop_size})"
+                )
+            center_crop_size = [int(center_crop_size[0]), int(center_crop_size[1])]
+            if center_crop_size[0] <= 0 or center_crop_size[1] <= 0:
+                raise ValueError(f"runtime.center_crop_size values must be positive, got {center_crop_size}")
+        else:
+            raise TypeError(
+                "runtime.center_crop_size must be int, tuple/list of length 2, or null "
+                f"(got {type(center_crop_size)})"
+            )
+    expected_groups = data_cfg.get("expected_groups", runtime_cfg.get("expected_groups"))
+    if expected_groups is not None:
+        expected_groups = int(expected_groups)
+        if expected_groups < 1:
+            raise ValueError(f"expected_groups must be >= 1, got {expected_groups}")
 
     if modality == "deepbacs":
         requested_img_size = runtime_cfg.get("img_size")
@@ -140,6 +164,8 @@ def main() -> None:
                 "modality": modality,
                 "device": device,
                 "img_size": img_size_cfg,
+                "center_crop_size": center_crop_size,
+                "expected_groups": expected_groups,
                 "backbone_name": backbone_cfg.get("name"),
                 "backbone_variant": backbone_cfg.get("variant"),
                 "dino_size": dino_size,
@@ -163,6 +189,8 @@ def main() -> None:
     print(f"[extract_features] device     = {device}")
     print(f"[extract_features] modality   = {modality}")
     print(f"[extract_features] img_size   = {img_size_cfg}")
+    print(f"[extract_features] center_crop_size = {center_crop_size}")
+    print(f"[extract_features] expected_groups  = {expected_groups}")
     if checkpoint_path:
         print(f"[extract_features] checkpoint= {checkpoint_path}")
 
@@ -170,6 +198,8 @@ def main() -> None:
         data_dir=data_dir,
         dino_size=dino_size,
         img_size=img_size_cfg,
+        center_crop_size=center_crop_size,
+        expected_groups=expected_groups,
         batch_size=batch_size,
         num_workers=num_workers,
         device=device,
@@ -185,6 +215,8 @@ def main() -> None:
         else:
             to_save[k] = v
     to_save["modality"] = np.array([modality], dtype=object)
+    to_save["center_crop_size"] = np.array([center_crop_size], dtype=object)
+    to_save["expected_groups"] = np.array([expected_groups], dtype=object)
 
     np.savez_compressed(out_path, **to_save)
 
@@ -207,6 +239,8 @@ def main() -> None:
                 "dino_size": dino_size,
                 "data_dir": data_dir,
                 "modality": modality,
+                "center_crop_size": center_crop_size,
+                "expected_groups": expected_groups,
             },
         )
 

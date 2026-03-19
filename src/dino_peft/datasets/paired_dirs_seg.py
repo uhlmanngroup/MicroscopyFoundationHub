@@ -8,85 +8,18 @@ from dino_peft.utils.image_size import (
     compute_resized_hw,
     parse_img_size_config,
 )
+from dino_peft.utils.image_loading import (
+    center_crop_box as _center_crop_box,
+    load_rgb_image,
+    open_first_frame,
+    parse_center_crop_size as _parse_center_crop_size,
+)
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
-
-
-def _parse_center_crop_size(center_crop_size):
-    if center_crop_size is None:
-        return None
-    if isinstance(center_crop_size, int):
-        if center_crop_size <= 0:
-            raise ValueError(f"center_crop_size must be positive, got {center_crop_size}")
-        return (center_crop_size, center_crop_size)
-    if isinstance(center_crop_size, (tuple, list)):
-        if len(center_crop_size) != 2:
-            raise ValueError(
-                f"center_crop_size tuple/list must have len 2, got {center_crop_size}"
-            )
-        h, w = int(center_crop_size[0]), int(center_crop_size[1])
-        if h <= 0 or w <= 0:
-            raise ValueError(f"center_crop_size values must be positive, got {center_crop_size}")
-        return (h, w)
-    raise TypeError(
-        "center_crop_size must be None, int, or tuple/list of length 2 "
-        f"(got {type(center_crop_size)})"
-    )
-
-
-def _center_crop_box(width: int, height: int, crop_w: int, crop_h: int):
-    if crop_w > width or crop_h > height:
-        raise ValueError(
-            f"Requested center crop ({crop_w}, {crop_h}) is larger than image ({width}, {height})"
-        )
-    left = (width - crop_w) // 2
-    top = (height - crop_h) // 2
-    right = left + crop_w
-    bottom = top + crop_h
-    return (left, top, right, bottom)
 
 def _list_files(root: Path, recursive: bool):
     pattern = "**/*" if recursive else "*"
     return sorted([p for p in root.glob(pattern) if p.is_file() and p.suffix.lower() in IMG_EXTS])
-
-
-def _rescale_grayscale_to_uint8(arr: np.ndarray) -> np.ndarray:
-    """
-    Robustly map a single grayscale image to uint8 using per-image percentiles.
-
-    This is only used for high-bit-depth microscopy images. Standard uint8 inputs
-    keep the legacy path unchanged.
-    """
-    arr = np.asarray(arr, dtype=np.float32)
-    if arr.ndim != 2:
-        raise ValueError(f"Expected 2D grayscale array, got shape {arr.shape}")
-
-    lo = float(np.quantile(arr, 0.001))
-    hi = float(np.quantile(arr, 0.999))
-    if hi <= lo:
-        lo = float(np.min(arr))
-        hi = float(np.max(arr))
-    if hi <= lo:
-        return np.zeros(arr.shape, dtype=np.uint8)
-
-    arr = np.clip((arr - lo) / (hi - lo), 0.0, 1.0)
-    return np.round(arr * 255.0).astype(np.uint8)
-
-
-def _pil_grayscale_to_rgb(img: Image.Image) -> Image.Image:
-    """
-    Preserve contrast for high-bit-depth grayscale images while keeping the
-    existing uint8 path unchanged for EM datasets.
-    """
-    arr = np.array(img)
-    if arr.ndim == 3:
-        arr = arr[..., 0]
-
-    if arr.dtype == np.uint8:
-        gray = img.convert("L")
-    else:
-        gray = Image.fromarray(_rescale_grayscale_to_uint8(arr), mode="L")
-    return Image.merge("RGB", (gray, gray, gray))
 
 class PairedDirsSegDataset(Dataset):
     """
@@ -175,21 +108,10 @@ class PairedDirsSegDataset(Dataset):
         return len(self.pairs)
 
     def _load_rgb(self, p: Path):
-        img = Image.open(p)
-        # if TIFF has multiple frames, take the first
-        try:
-            if getattr(img, "n_frames", 1) > 1:
-                img.seek(0)
-        except Exception:
-            pass
         if self.to_rgb:
-            if img.mode == "RGB":
-                return img
-            # Typical EM is uint8 grayscale; some DeepBacs TIFFs are 16-bit and
-            # need per-image rescaling before converting to RGB.
-            return _pil_grayscale_to_rgb(img)
+            return load_rgb_image(p)
         else:
-            return img
+            return open_first_frame(p)
 
     def __getitem__(self, idx):
         ip, mp = self.pairs[idx]
@@ -200,12 +122,7 @@ class PairedDirsSegDataset(Dataset):
         img = self._load_rgb(ip)
 
         # --- MASK: force single channel ---
-        mask = Image.open(mp)
-        try:
-            if getattr(mask, "n_frames", 1) > 1:
-                mask.seek(0)
-        except Exception:
-            pass
+        mask = open_first_frame(mp)
 
         # Convert to 8-bit single-channel. This handles RGB/RGBA/Palette masks robustly.
         if mask.mode not in ("L", "I;16", "I"):

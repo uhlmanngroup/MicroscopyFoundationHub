@@ -20,7 +20,7 @@ export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 # ---- User-overridable settings ----
-CFG_PATH="${CFG_PATH:-configs/cluster/triplet_feat_domain_pipeline_dinov2_large_head.yaml}"
+CFG_PATH="${CFG_PATH:-configs/cluster/EM/triplet_feat_domain_pipeline_dinov2_large_head_center448.yaml}"
 CHECKPOINT="${CHECKPOINT:-}"          # optional .pt for LoRA/adapted features
 SKIP_FEATURES="${SKIP_FEATURES:-0}"   # 1 to skip extract_features
 SKIP_PCA="${SKIP_PCA:-0}"             # 1 to skip PCA/UMAP

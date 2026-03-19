@@ -4,8 +4,9 @@
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from PIL import Image
 from torch.utils.data import Dataset
+
+from dino_peft.utils.image_loading import center_crop_image, load_rgb_image, parse_center_crop_size
 
 
 class FlatImageFolder(Dataset):
@@ -22,9 +23,11 @@ class FlatImageFolder(Dataset):
         root_dir: str | Path,
         transform: Optional[Callable] = None,
         valid_extensions: Optional[List[str]] = None,
+        center_crop_size=None,
     ) -> None:
         self.root_dir = Path(root_dir)
         self.transform = transform
+        self.center_crop_size = parse_center_crop_size(center_crop_size)
 
         if valid_extensions is None:
             valid_extensions = [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
@@ -52,7 +55,9 @@ class FlatImageFolder(Dataset):
 
     def __getitem__(self, index: int) -> Tuple:
         image_path = self.image_paths[index]
-        image = Image.open(image_path).convert("RGB")  # DINO expects RGB images
+        image = load_rgb_image(image_path)
+        if self.center_crop_size is not None:
+            image = center_crop_image(image, self.center_crop_size)
 
         if self.transform is not None:
             image = self.transform(image)

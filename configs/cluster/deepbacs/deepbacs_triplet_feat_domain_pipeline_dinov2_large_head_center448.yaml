@@ -1,0 +1,58 @@
+# Cluster pipeline config: extract features -> PCA/UMAP -> pairwise domain analysis
+# on the DeepBacs triplet dataset, using a fixed 448x448 center crop.
+
+experiment_id: "2026-03-19_deepbacs_triplet_dinov2-large_head_feats_analysis_center448"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+task_type: "feat-analysis/deepbacs-triplet-center448"
+modality: "deepbacs"
+
+data:
+  data_dir: "/home/cfuste/data/datasets/deepbacs/triplet/test/images"
+  expected_groups: 3
+
+model:
+  backbone:
+    name: dinov2
+    variant: large
+    load_backend: torchhub
+    weights: null
+    repo_dir: null
+    preprocess:
+      preset: em
+  dino_size: "large"
+  checkpoint: null
+
+runtime:
+  batch_size: 8
+  num_workers: 4
+  device: "auto"
+  center_crop_size: 448
+  img_size:
+    mode: native
+
+pca:
+  n_components: 50
+  plot_dims: [0, 1]
+  whiten: false
+  l2norm: false
+  seed: 0
+
+umap:
+  enabled: true
+  pca_dim: 50
+  n_neighbors: 15
+  min_dist: 0.1
+  n_components: 2
+  metric: euclidean
+  seed: 0
+
+domain_analysis:
+  mode: pairwise_all
+  n_components: 64
+  seed: 0
+  output_subdir: "domain-analysis"
+  json_name: "pairwise_metrics.json"
+  csv_name: "pairwise_metrics.csv"
+  use_run_dir_metrics: false
+
+clahe_norm: false

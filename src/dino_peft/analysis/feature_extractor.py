@@ -15,6 +15,7 @@ from dino_peft.backbones import (
 )
 from dino_peft.datasets.flat_image_folder import FlatImageFolder
 from dino_peft.models.lora import apply_peft
+from dino_peft.utils.sample_groups import infer_sample_grouping
 
 def _count_lora_matches(lora_state: dict, model_state: dict) -> int:
     return sum(1 for k in lora_state.keys() if k in model_state)
@@ -66,6 +67,8 @@ def extract_features_from_folder(
     data_dir: str | Path,
     dino_size: str = "base",
     img_size: int | dict | tuple = 518,
+    center_crop_size: int | tuple | list | None = None,
+    expected_groups: int | None = None,
     batch_size: int = 16,
     num_workers: int = 4,
     device: str = "cuda",
@@ -159,7 +162,11 @@ def extract_features_from_folder(
         preprocess_cfg["img_size"],
         backbone_cfg=backbone_cfg,
     )
-    dataset = FlatImageFolder(root_dir=data_dir, transform=transform)
+    dataset = FlatImageFolder(
+        root_dir=data_dir,
+        transform=transform,
+        center_crop_size=center_crop_size,
+    )
 
     def pad_collate(batch):
         images, paths = zip(*batch)
@@ -183,19 +190,23 @@ def extract_features_from_folder(
 
     all_features = []
     all_paths = []
-    all_dataset_names = []
-
     for imgs, paths in loader:
         imgs = imgs.to(device_obj, non_blocking=True)
         output = model(imgs)
         feats_np = output.global_embedding.cpu().numpy().astype("float32")
         all_features.append(feats_np)
         all_paths.extend(paths)
-        # Infer dataset name from filename prefix (supports N datasets in composed folders).
-        for p in paths:
-            all_dataset_names.append(_infer_dataset_name_from_filename(p))
 
     features_np = np.concatenate(all_features, axis=0)  # (N, C)
+    if expected_groups in (2, 3):
+        grouping = infer_sample_grouping(all_paths, expected_groups=expected_groups)
+        all_dataset_names = list(grouping.labels)
+        print(
+            "[feature_extractor] inferred dataset groups from filenames: "
+            f"{grouping.unique_labels} (depth={grouping.inferred_depth}, expected_groups={expected_groups})"
+        )
+    else:
+        all_dataset_names = [_infer_dataset_name_from_filename(p) for p in all_paths]
     unique_names = sorted(set(all_dataset_names))
     name_to_id = {name: idx for idx, name in enumerate(unique_names)}
     dataset_ids = np.array([name_to_id[n] for n in all_dataset_names], dtype=np.int32)

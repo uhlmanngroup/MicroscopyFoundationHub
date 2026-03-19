@@ -32,6 +32,11 @@ from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.models.lora import apply_peft
 from dino_peft.utils.paths import setup_run_dir, update_metrics
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
+from dino_peft.utils.sample_groups import (
+    infer_expected_group_count,
+    infer_sample_grouping,
+    select_balanced_preview_indices,
+)
 
 def _filter_dataset_params(dataset_class, dataset_params: dict, dataset_type: str) -> dict:
     sig = inspect.signature(dataset_class.__init__)
@@ -65,6 +70,12 @@ def pad_collate(batch):
         pad_mask[:mh, :mw] = mask
         padded_masks.append(pad_mask)
     return torch.stack(padded_imgs), torch.stack(padded_masks), list(names)
+
+
+def _dataset_sample_names(dataset) -> list[str]:
+    if hasattr(dataset, "pairs"):
+        return [str(img_path.stem) for img_path, _ in dataset.pairs]
+    return [str(i) for i in range(len(dataset))]
 
 
 def _resolve_modality(cfg: dict) -> str:
@@ -149,6 +160,7 @@ def eval_loop(
     preview_seed: int | None = None,
     preview_mode: str = "random",
     preview_cols: int = 4,
+    expected_groups: int | None = None,
 ):
     inter = np.zeros(num_classes, dtype=np.float64)
     union = np.zeros(num_classes, dtype=np.float64)
@@ -166,21 +178,42 @@ def eval_loop(
     fg_fn = 0.0
     fg_gt_pix = 0.0
     fg_pr_pix = 0.0
+    per_group_stats = {}
 
     prev_dir = None
     sample_indices = None
+    selected_preview_order = {}
+    dataset = getattr(loader, "dataset", None)
+    dataset_names = _dataset_sample_names(dataset) if dataset is not None else []
+    grouping = (
+        infer_sample_grouping(dataset_names, expected_groups=expected_groups)
+        if dataset_names and expected_groups in (2, 3)
+        else None
+    )
     if out_dir is not None:
         prev_dir = Path(out_dir) / "figs" / "eval_previews"
         prev_dir.mkdir(parents=True, exist_ok=True)
         preview_mode = (preview_mode or "random").lower()
         if preview_mode == "random":
-            total = len(getattr(loader, "dataset", []))
-            if total and preview_n > 0:
+            total = len(dataset_names)
+            balanced_indices = []
+            if grouping is not None:
+                balanced_indices = select_balanced_preview_indices(
+                    grouping,
+                    seed=preview_seed,
+                    expected_groups=expected_groups,
+                )
+            if balanced_indices:
+                sample_indices = set(balanced_indices)
+                selected_preview_order = {idx: rank for rank, idx in enumerate(balanced_indices)}
+            elif total and preview_n > 0:
                 import random
 
                 rng = random.Random(preview_seed) if preview_seed is not None else random
                 k = min(int(preview_n), int(total))
-                sample_indices = set(rng.sample(range(total), k))
+                picked = rng.sample(range(total), k)
+                sample_indices = set(picked)
+                selected_preview_order = {idx: rank for rank, idx in enumerate(picked)}
 
     preview_samples = []
     preview_group_idx = 0
@@ -218,6 +251,23 @@ def eval_loop(
         fg_fn    += (~pk_fg & mk_fg).sum().item()
         fg_gt_pix += mk_fg.sum().item()
         fg_pr_pix += pk_fg.sum().item()
+
+        if grouping is not None:
+            for j in range(imgs.size(0)):
+                sample_idx = global_idx + j
+                if sample_idx >= len(grouping.labels):
+                    continue
+                group_label = grouping.label_for_index(sample_idx)
+                stats = per_group_stats.setdefault(
+                    group_label,
+                    {"fg_inter": 0.0, "fg_union": 0.0, "fg_tp": 0.0, "fg_fp": 0.0, "fg_fn": 0.0, "num_samples": 0},
+                )
+                stats["fg_inter"] += (pk_fg[j] & mk_fg[j]).sum().item()
+                stats["fg_union"] += (pk_fg[j] | mk_fg[j]).sum().item()
+                stats["fg_tp"] += (pk_fg[j] & mk_fg[j]).sum().item()
+                stats["fg_fp"] += (pk_fg[j] & ~mk_fg[j]).sum().item()
+                stats["fg_fn"] += (~pk_fg[j] & mk_fg[j]).sum().item()
+                stats["num_samples"] += 1
     
         # ---------------- Preview triptychs ----------------
         if prev_dir is not None:
@@ -261,12 +311,14 @@ def eval_loop(
                     if (global_idx + j) in sample_indices
                 ]
                 for j in capture:
+                    sample_idx = global_idx + j
                     preview_samples.append(
                         {
                             "image": imgs_vis[j],
                             "gt": gt_rgb[j],
                             "pred": pred_rgb[j],
                             "name": str(names[j]),
+                            "_preview_rank": selected_preview_order.get(sample_idx, len(preview_samples)),
                         }
                     )
         global_idx += imgs.size(0)
@@ -280,6 +332,12 @@ def eval_loop(
                 title=f"Evaluation — {ckpt_tag} — group {preview_group_idx}",
             )
         else:
+            preview_samples = sorted(
+                preview_samples,
+                key=lambda sample: int(sample.get("_preview_rank", 10**9)),
+            )
+            for sample in preview_samples:
+                sample.pop("_preview_rank", None)
             out_png = Path(prev_dir) / f"eval_triptych_{ckpt_tag}_random.png"
             save_triptych_grid(
                 preview_samples,
@@ -298,7 +356,18 @@ def eval_loop(
     if fg_gt_pix == 0:
         print("[WARN] test set has ZERO foreground pixels — IoU_f/Dice_f not meaningful.")
 
-    return iou, dice, iou_f, dice_f
+    per_group_metrics = {}
+    if per_group_stats:
+        for label, stats in per_group_stats.items():
+            group_iou = stats["fg_inter"] / (stats["fg_union"] + eps)
+            group_dice = (2 * stats["fg_tp"]) / (2 * stats["fg_tp"] + stats["fg_fp"] + stats["fg_fn"] + eps)
+            per_group_metrics[label] = {
+                "foreground_iou": float(group_iou),
+                "foreground_dice": float(group_dice),
+                "num_samples": int(stats["num_samples"]),
+            }
+
+    return iou, dice, iou_f, dice_f, per_group_metrics
 
 
 # --- replace your `main()` with this version ---
@@ -489,7 +558,8 @@ def main():
         preview_cols = 4
 
     # --- compute metrics ---
-    iou, dice, iou_f, dice_f = eval_loop(
+    expected_groups = infer_expected_group_count(eval_cfg)
+    iou, dice, iou_f, dice_f, per_group_metrics = eval_loop(
         bb,
         head,
         loader,
@@ -500,6 +570,7 @@ def main():
         preview_seed=preview_seed,
         preview_mode=preview_mode,
         preview_cols=preview_cols,
+        expected_groups=expected_groups,
     )
 
     # --- write CSV before updating metrics.json ---
@@ -511,19 +582,42 @@ def main():
             w.writerow([k, f"{i:.6f}", f"{d:.6f}"])
         w.writerow(["foreground", f"{iou_f:.6f}", f"{dice_f:.6f}"])
         w.writerow(["mean", f"{iou.mean():.6f}", f"{dice.mean():.6f}"])
+        if per_group_metrics:
+            w.writerow([])
+            w.writerow(["dataset_group", "ForegroundIoU", "ForegroundDice", "NumSamples"])
+            for label, stats in sorted(per_group_metrics.items()):
+                w.writerow(
+                    [
+                        label,
+                        f"{stats['foreground_iou']:.6f}",
+                        f"{stats['foreground_dice']:.6f}",
+                        int(stats["num_samples"]),
+                    ]
+                )
     print(f"Saved metrics → {out_csv}")
+    eval_payload = {
+        "mean_iou": float(iou.mean()),
+        "mean_dice": float(dice.mean()),
+        "foreground_iou": float(iou_f),
+        "foreground_dice": float(dice_f),
+        "num_classes": int(eval_cfg["num_classes"]),
+        "modality": modality,
+        "deepbacs_center_crop_size": deepbacs_crop,
+    }
+    if per_group_metrics:
+        eval_payload["foreground_iou_per_dataset"] = {
+            label: float(stats["foreground_iou"]) for label, stats in sorted(per_group_metrics.items())
+        }
+        eval_payload["foreground_dice_per_dataset"] = {
+            label: float(stats["foreground_dice"]) for label, stats in sorted(per_group_metrics.items())
+        }
+        eval_payload["num_samples_per_dataset"] = {
+            label: int(stats["num_samples"]) for label, stats in sorted(per_group_metrics.items())
+        }
     update_metrics(
         run_dir,
         "eval",
-        {
-            "mean_iou": float(iou.mean()),
-            "mean_dice": float(dice.mean()),
-            "foreground_iou": float(iou_f),
-            "foreground_dice": float(dice_f),
-            "num_classes": int(eval_cfg["num_classes"]),
-            "modality": modality,
-            "deepbacs_center_crop_size": deepbacs_crop,
-        },
+        eval_payload,
     )
 
 if __name__ == "__main__":

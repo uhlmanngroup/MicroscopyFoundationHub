@@ -23,6 +23,11 @@ from dino_peft.models.lora import apply_peft, lora_parameters, resolve_full_fine
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.utils.paths import setup_run_dir, write_run_info, update_metrics
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
+from dino_peft.utils.sample_groups import (
+    infer_expected_group_count,
+    infer_sample_grouping,
+    select_balanced_preview_indices,
+)
 
 def _filter_dataset_params(dataset_class, dataset_params: dict, dataset_type: str) -> dict:
     sig = inspect.signature(dataset_class.__init__)
@@ -257,6 +262,21 @@ class SegTrainer:
         # -------- final datasets ----------
         self.train_ds = make_subset_dataset(base_ds, train_idx, t_train)
         self.val_ds   = make_subset_dataset(base_ds, val_idx,   t_val)   # no train aug on validation
+        self.expected_group_count = infer_expected_group_count(self.cfg)
+        val_names = [str(img_path.stem) for img_path, _ in self.val_ds.pairs]
+        self.val_preview_indices = []
+        if val_names and self.expected_group_count in (2, 3):
+            val_grouping = infer_sample_grouping(
+                val_names,
+                expected_groups=self.expected_group_count,
+            )
+            self.val_preview_indices = select_balanced_preview_indices(
+                val_grouping,
+                seed=self.seed,
+                expected_groups=self.expected_group_count,
+            )
+        if not self.val_preview_indices:
+            self.val_preview_indices = list(range(min(4, len(self.val_ds))))
 
         # -------- loaders ----------
         pin = (self.device.type == "cuda")
@@ -452,6 +472,12 @@ class SegTrainer:
             bg_gt_total = bg_pred_total = 0
 
             with torch.no_grad():
+                preview_samples = []
+                preview_order = {
+                    idx: rank for rank, idx in enumerate(self.val_preview_indices)
+                }
+                preview_index_set = set(self.val_preview_indices)
+                val_global_idx = 0
                 for i, (imags, masks, names) in enumerate(self.val_loader):
                     masks = masks.long()
                     imgs = imags.to(self.device, non_blocking=True)
@@ -469,48 +495,49 @@ class SegTrainer:
                     bg_gt_total  += (masks == 0).sum().item()
                     bg_pred_total+= (pred  == 0).sum().item()
 
-                    if i == 0:
-                        # ---- Save a labeled triptych (first batch only) ----
-                        grid_dir = self.previews_dir
-                        grid_dir.mkdir(parents=True, exist_ok=True)
+                    if preview_index_set:
+                        preds_cpu = logits.detach().argmax(1).cpu()
+                        gts_cpu = masks.detach().cpu()
+                        imgs_vis = denorm_imagenet(imags.detach().cpu()).clamp(0, 1)
 
-                        # Show up to K samples
-                        K = min(4, imgs.size(0))
-
-                        # (B, H, W) int class indices
-                        preds_cpu = logits[:K].detach().argmax(1).cpu()
-                        gts_cpu   = masks[:K].detach().cpu()
-
-                        # de-normalize images for visualization
-                        imgs_vis = denorm_imagenet(imags[:K].detach().cpu()).clamp(0, 1)  # use original imags from loader
-
-                        # resize imgs to match mask size if needed
                         H, W = gts_cpu.shape[-2:]
                         if imgs_vis.shape[-2:] != (H, W):
-                            imgs_vis = F.interpolate(imgs_vis, size=(H, W), mode="bilinear", align_corners=False)
+                            imgs_vis = F.interpolate(
+                                imgs_vis, size=(H, W), mode="bilinear", align_corners=False
+                            )
 
-                        # colorize masks (RGB tensors, [0,1])
                         pred_rgb = colorize_mask(preds_cpu, self.cfg["num_classes"])
-                        gt_rgb   = colorize_mask(gts_cpu,   self.cfg["num_classes"])
+                        gt_rgb = colorize_mask(gts_cpu, self.cfg["num_classes"])
 
-                        # column titles from dataset names
-                        col_names = [str(n) for n in list(names)[:K]]
+                        for j in range(imgs.size(0)):
+                            sample_idx = val_global_idx + j
+                            if sample_idx not in preview_index_set:
+                                continue
+                            preview_samples.append(
+                                {
+                                    "image": imgs_vis[j],
+                                    "gt": gt_rgb[j],
+                                    "pred": pred_rgb[j],
+                                    "name": str(names[j]),
+                                    "_preview_rank": preview_order.get(sample_idx, len(preview_samples)),
+                                }
+                            )
+                    val_global_idx += imgs.size(0)
 
-                        # pack samples
-                        samples = []
-                        for j in range(K):
-                            samples.append({
-                                "image": imgs_vis[j],  # CxHxW tensor is fine
-                                "gt":    gt_rgb[j],    # already RGB
-                                "pred":  pred_rgb[j],  # already RGB
-                                "name":  col_names[j],
-                            })
-
-                        save_triptych_grid(
-                            samples,
-                            out_path=str(grid_dir / f"ep{epoch:03d}_triptych.png"),
-                            title=f"Epoch {epoch} — Validation Triptychs"
-                        )
+                if preview_samples:
+                    grid_dir = self.previews_dir
+                    grid_dir.mkdir(parents=True, exist_ok=True)
+                    preview_samples = sorted(
+                        preview_samples,
+                        key=lambda sample: int(sample.get("_preview_rank", 10**9)),
+                    )
+                    for sample in preview_samples:
+                        sample.pop("_preview_rank", None)
+                    save_triptych_grid(
+                        preview_samples,
+                        out_path=str(grid_dir / f"ep{epoch:03d}_triptych.png"),
+                        title=f"Epoch {epoch} — Validation Triptychs"
+                    )
 
             val_loss /= max(1, len(self.val_loader))
             last_train_loss = float(avg_train)

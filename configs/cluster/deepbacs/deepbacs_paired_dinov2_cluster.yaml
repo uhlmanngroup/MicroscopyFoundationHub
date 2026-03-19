@@ -1,15 +1,15 @@
 # Environment: cluster (UZH Science) - DeepBacs paired dataset
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/deepbacs/paired/coli-aureus/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/coli-aureus/train/masks"
-test_img_dir: "/home/cfuste/data/datasets/deepbacs/paired/coli-aureus/test/images"
-test_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/coli-aureus/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/deepbacs/paired/aureus-subtilis/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/aureus-subtilis/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/deepbacs/paired/aureus-subtilis/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/aureus-subtilis/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_paired_coli-aureus_dinov2_frozen_seg"
+experiment_id: "2026-03-03_deepbacs_paired_aureus-subtilis_dinov2_frozen_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/seg/paired"
-task_type: "coli-aureus-frozen"
+task_type: "aureus-subtilis-frozen"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
 

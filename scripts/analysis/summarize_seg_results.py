@@ -57,6 +57,7 @@ class RunRecord:
     mean_iou: Optional[float]
     foreground_dice: Optional[float]
     foreground_iou: Optional[float]
+    foreground_iou_per_dataset: Dict[str, float]
     best_val_loss: Optional[float]
     best_epoch: Optional[int]
 
@@ -193,6 +194,26 @@ def infer_dataset_label(cfg: Dict, run_dir: Path) -> str:
     return ds_type.title() if ds_type else "Unknown"
 
 
+def _safe_metric_suffix(label: str) -> str:
+    suffix = re.sub(r"[^a-zA-Z0-9]+", "_", str(label).strip().lower()).strip("_")
+    return suffix or "unknown"
+
+
+def build_dataset_metric_column_map(labels: Iterable[str]) -> Dict[str, str]:
+    used: set[str] = set()
+    out: Dict[str, str] = {}
+    for label in sorted({str(v) for v in labels if str(v).strip()}):
+        base = _safe_metric_suffix(label)
+        candidate = base
+        idx = 2
+        while candidate in used:
+            candidate = f"{base}_{idx}"
+            idx += 1
+        used.add(candidate)
+        out[label] = candidate
+    return out
+
+
 def collect_runs(
     root: Path, summary_dir: Path, metrics_filename: str, config_candidates: Sequence[str]
 ) -> List[RunRecord]:
@@ -248,6 +269,11 @@ def collect_runs(
                 mean_iou=eval_metrics.get("mean_iou"),
                 foreground_dice=eval_metrics.get("foreground_dice"),
                 foreground_iou=eval_metrics.get("foreground_iou"),
+                foreground_iou_per_dataset={
+                    str(label): float(value)
+                    for label, value in (eval_metrics.get("foreground_iou_per_dataset") or {}).items()
+                    if isinstance(value, (int, float))
+                },
                 best_val_loss=train_metrics.get("best_val_loss"),
                 best_epoch=train_metrics.get("best_epoch"),
             )
@@ -264,9 +290,16 @@ def compute_stats(values: Iterable[float]) -> Tuple[Optional[float], Optional[fl
     return float(stats.mean(vals)), float(stats.stdev(vals))
 
 
-def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
+def build_aggregates(
+    run_records: List[RunRecord],
+    dataset_metric_columns: Optional[Dict[str, str]] = None,
+) -> List[Dict]:
     grouped: Dict[Tuple[str, str, str, str, bool, bool, str], Dict[str, List[float]]] = {}
+    grouped_per_dataset: Dict[
+        Tuple[str, str, str, str, bool, bool, str], Dict[str, List[float]]
+    ] = {}
     counts: Dict[Tuple[str, str, str, str, bool, bool, str], int] = {}
+    all_dataset_metric_labels: set[str] = set()
 
     for record in run_records:
         ds_label = str(record.dataset_label or "Unknown")
@@ -284,12 +317,18 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
         )
         if key not in grouped:
             grouped[key] = {metric: [] for metric in METRIC_KEYS}
+            grouped_per_dataset[key] = {}
             counts[key] = 0
         counts[key] += 1
         for metric in METRIC_KEYS:
             value = getattr(record, metric)
             if isinstance(value, (int, float)):
                 grouped[key][metric].append(float(value))
+        for label, value in record.foreground_iou_per_dataset.items():
+            if not isinstance(value, (int, float)):
+                continue
+            grouped_per_dataset[key].setdefault(str(label), []).append(float(value))
+            all_dataset_metric_labels.add(str(label))
 
     mode_order = {
         "head_only": 0,
@@ -314,6 +353,8 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
         )
 
     aggregates: List[Dict] = []
+    if dataset_metric_columns is None:
+        dataset_metric_columns = build_dataset_metric_column_map(all_dataset_metric_labels)
     for key, metric_lists in sorted(grouped.items(), key=_sort_key):
         dataset_label, modality, task_type, dataset_type, use_lora, full_finetune, size = key
         row: Dict[str, Optional[float]] = {
@@ -331,6 +372,11 @@ def build_aggregates(run_records: List[RunRecord]) -> List[Dict]:
             mean_val, std_val = compute_stats(values)
             row[f"{metric}_mean"] = mean_val
             row[f"{metric}_std"] = std_val
+        per_dataset_metrics = grouped_per_dataset.get(key, {})
+        for raw_label, suffix in dataset_metric_columns.items():
+            mean_val, std_val = compute_stats(per_dataset_metrics.get(raw_label, []))
+            row[f"foreground_iou_per_dataset__{suffix}_mean"] = mean_val
+            row[f"foreground_iou_per_dataset__{suffix}_std"] = std_val
         aggregates.append(row)
     return aggregates
 
@@ -343,8 +389,11 @@ def write_csv(path: Path, rows: List[Dict[str, object]], fieldnames: Sequence[st
             writer.writerow(row)
 
 
-def serialize_run_record(record: RunRecord) -> Dict[str, object]:
-    return {
+def serialize_run_record(
+    record: RunRecord,
+    dataset_metric_columns: Optional[Dict[str, str]] = None,
+) -> Dict[str, object]:
+    row = {
         "run_dir": str(record.run_dir),
         "rel_run_dir": record.rel_run_dir,
         "experiment_id": record.experiment_id,
@@ -369,6 +418,13 @@ def serialize_run_record(record: RunRecord) -> Dict[str, object]:
         "best_val_loss": record.best_val_loss,
         "best_epoch": record.best_epoch,
     }
+    dataset_metric_columns = dataset_metric_columns or build_dataset_metric_column_map(
+        record.foreground_iou_per_dataset.keys()
+    )
+    for label, value in sorted(record.foreground_iou_per_dataset.items()):
+        suffix = dataset_metric_columns.get(label, _safe_metric_suffix(label))
+        row[f"foreground_iou_per_dataset__{suffix}"] = value
+    return row
 
 
 def main() -> None:
@@ -389,8 +445,6 @@ def main() -> None:
     if not run_records:
         print("[warn] no runs discovered, nothing to summarize.")
         return
-    aggregates = build_aggregates(run_records)
-
     run_fieldnames = [
         "run_dir",
         "rel_run_dir",
@@ -416,6 +470,21 @@ def main() -> None:
         "best_val_loss",
         "best_epoch",
     ]
+    per_dataset_labels = sorted(
+        {
+            label
+            for record in run_records
+            for label in record.foreground_iou_per_dataset.keys()
+        }
+    )
+    per_dataset_column_map = build_dataset_metric_column_map(per_dataset_labels)
+    aggregates = build_aggregates(run_records, dataset_metric_columns=per_dataset_column_map)
+    run_fieldnames.extend(
+        [
+            f"foreground_iou_per_dataset__{suffix}"
+            for _, suffix in per_dataset_column_map.items()
+        ]
+    )
     summary_fieldnames = [
         "dataset_label",
         "modality",
@@ -435,8 +504,21 @@ def main() -> None:
         "foreground_iou_mean",
         "foreground_iou_std",
     ]
+    summary_fieldnames.extend(
+        [
+            col
+            for raw_label, suffix in per_dataset_column_map.items()
+            for col in (
+                f"foreground_iou_per_dataset__{suffix}_mean",
+                f"foreground_iou_per_dataset__{suffix}_std",
+            )
+        ]
+    )
 
-    run_rows = [serialize_run_record(record) for record in run_records]
+    run_rows = [
+        serialize_run_record(record, dataset_metric_columns=per_dataset_column_map)
+        for record in run_records
+    ]
     write_csv(summary_dir / "run_metrics.csv", run_rows, run_fieldnames)
     write_csv(summary_dir / "summary.csv", aggregates, summary_fieldnames)
 

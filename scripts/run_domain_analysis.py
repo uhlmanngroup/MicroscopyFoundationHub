@@ -196,12 +196,30 @@ def _compute_pairwise_metrics(
     for dom_a, dom_b in itertools.combinations(domains, 2):
         feats_a = dom_a["features"]
         feats_b = dom_b["features"]
+        max_components = int(
+            min(
+                feats_a.shape[0] + feats_b.shape[0],
+                feats_a.shape[1],
+            )
+        )
+        pair_components = int(min(n_components, max_components))
+        if pair_components < 1:
+            raise ValueError(
+                f"Cannot run PCA for pair {dom_a['label']} vs {dom_b['label']}: "
+                f"allowable components={pair_components}"
+            )
+        if pair_components != int(n_components):
+            print(
+                "[domain_analysis][warn] Reducing PCA components for pair "
+                f"{dom_a['label']} vs {dom_b['label']} from {int(n_components)} to "
+                f"{pair_components} (max allowed by pair sample count/features)."
+            )
 
         fdd_value = compute_fid_from_features(feats_a, feats_b)
         _, feats_a_pca, feats_b_pca = fit_pca_on_concat(
             feats_a,
             feats_b,
-            n_components=n_components,
+            n_components=pair_components,
             random_state=seed,
         )
         lr_metrics = lr_domain_separability(
@@ -224,7 +242,8 @@ def _compute_pairwise_metrics(
             "frechet_dino_distance": float(fdd_value),
             "logreg_accuracy": float(lr_metrics["accuracy"]),
             "logreg_roc_auc": float(lr_metrics["roc_auc"]),
-            "n_components": int(n_components),
+            "n_components_requested": int(n_components),
+            "n_components": int(pair_components),
             "seed": int(seed),
         }
         rows.append(row)
@@ -281,6 +300,7 @@ def _write_pairwise_csv(path: Path, rows: list[Dict[str, Any]]) -> None:
         "frechet_dino_distance",
         "logreg_accuracy",
         "logreg_roc_auc",
+        "n_components_requested",
         "n_components",
         "seed",
         "domain_a_npz",

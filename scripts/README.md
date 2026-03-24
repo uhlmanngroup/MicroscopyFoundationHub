@@ -40,3 +40,4 @@ Postprocess example:
 
 ## Ablations
 - `scripts/ablation_paired_balance_dinov2.py`: balanced vs unbalanced paired ablation
+- `scripts/ablation_deepbacs_paired_balance.py`: balanced vs unbalanced paired DeepBacs training with config-driven source groups and CLI tuning-mode override (`frozen` or `lora`)

@@ -40,7 +40,7 @@ Postprocess example:
 
 ## Ablations
 - `scripts/ablation_paired_balance_dinov2.py`: balanced vs unbalanced paired ablation
-- `scripts/ablation_deepbacs_paired_balance.py`: balanced vs unbalanced paired DeepBacs training with config-driven source groups and CLI tuning-mode override (`frozen` or `lora`)
+- `scripts/ablation_deepbacs_paired_balance.py`: balanced vs unbalanced paired DeepBacs training with pair-name inference (`aureus-subtilis`, `coli-aureus`, `coli-subtilis`) and CLI tuning-mode override (`frozen` or `lora`)
 
 Cluster example:
 - `sbatch slurm/deepbacs/ablation_paired_balance_dinov2.sbatch`

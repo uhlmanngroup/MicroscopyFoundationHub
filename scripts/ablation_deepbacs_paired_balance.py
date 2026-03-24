@@ -16,6 +16,12 @@ from torch.utils.data import DataLoader
 
 from dino_peft.trainers.seg_trainer import SegTrainer
 
+PAIR_SOURCE_PATTERNS = {
+    "aureus-subtilis": ("jenilered", "test"),
+    "coli-aureus": ("pos", "jenilered"),
+    "coli-subtilis": ("pos", "test"),
+}
+
 
 class BalancedPairBatchSampler:
     """Yield one sample from each configured group per batch."""
@@ -56,30 +62,89 @@ def _normalize_patterns(value):
 
 def _parse_balanced_sampling_cfg(cfg: dict):
     sampling_cfg = dict(cfg.get("balanced_sampling") or {})
-    group_a = dict(sampling_cfg.get("group_a") or {})
-    group_b = dict(sampling_cfg.get("group_b") or {})
-
-    group_a_name = str(group_a.get("name", "group_a")).strip() or "group_a"
-    group_b_name = str(group_b.get("name", "group_b")).strip() or "group_b"
-    group_a_patterns = [p.lower() for p in _normalize_patterns(group_a.get("patterns"))]
-    group_b_patterns = [p.lower() for p in _normalize_patterns(group_b.get("patterns"))]
     match_source = str(sampling_cfg.get("match_source", "path")).strip().lower() or "path"
-
-    if not group_a_patterns or not group_b_patterns:
-        raise ValueError(
-            "balanced_sampling.group_a.patterns and balanced_sampling.group_b.patterns "
-            "must both be provided."
-        )
     if match_source not in {"path", "stem", "name"}:
         raise ValueError(f"Unsupported balanced_sampling.match_source '{match_source}'")
 
+    group_a = dict(sampling_cfg.get("group_a") or {})
+    group_b = dict(sampling_cfg.get("group_b") or {})
+    group_a_patterns = [p.lower() for p in _normalize_patterns(group_a.get("patterns"))]
+    group_b_patterns = [p.lower() for p in _normalize_patterns(group_b.get("patterns"))]
+
+    if group_a_patterns and group_b_patterns:
+        group_a_name = str(group_a.get("name", "group_a")).strip() or "group_a"
+        group_b_name = str(group_b.get("name", "group_b")).strip() or "group_b"
+        return {
+            "group_a_name": group_a_name,
+            "group_b_name": group_b_name,
+            "group_a_patterns": group_a_patterns,
+            "group_b_patterns": group_b_patterns,
+            "match_source": match_source,
+            "pair_key": None,
+        }
+
+    pair_key = _infer_pair_key(cfg)
+    group_a_name, group_b_name = _resolve_pair_sources(pair_key)
     return {
         "group_a_name": group_a_name,
         "group_b_name": group_b_name,
-        "group_a_patterns": group_a_patterns,
-        "group_b_patterns": group_b_patterns,
+        "group_a_patterns": [group_a_name],
+        "group_b_patterns": [group_b_name],
         "match_source": match_source,
+        "pair_key": pair_key,
     }
+
+
+def _canonicalize_pair_key(value: str) -> str:
+    key = str(value).strip().lower().replace("_", "-")
+    if key in PAIR_SOURCE_PATTERNS:
+        return key
+    parts = [part for part in key.split("-") if part]
+    if len(parts) == 2:
+        reversed_key = "-".join(reversed(parts))
+        if reversed_key in PAIR_SOURCE_PATTERNS:
+            return reversed_key
+    raise ValueError(
+        f"Unknown DeepBacs paired dataset '{value}'. "
+        f"Expected one of: {', '.join(sorted(PAIR_SOURCE_PATTERNS.keys()))}"
+    )
+
+
+def _infer_pair_key(cfg: dict) -> str:
+    explicit = cfg.get("paired_dataset_name") or cfg.get("paired_dataset")
+    if explicit:
+        return _canonicalize_pair_key(explicit)
+
+    candidate_paths = [
+        cfg.get("train_img_dir"),
+        cfg.get("train_mask_dir"),
+        cfg.get("test_img_dir"),
+        cfg.get("test_mask_dir"),
+        cfg.get("task_type"),
+        cfg.get("experiment_id"),
+    ]
+    known_keys = list(PAIR_SOURCE_PATTERNS.keys())
+    for candidate in candidate_paths:
+        if not candidate:
+            continue
+        text = str(candidate).lower().replace("_", "-")
+        for key in known_keys:
+            if key in text:
+                return key
+            parts = key.split("-")
+            if len(parts) == 2 and f"{parts[1]}-{parts[0]}" in text:
+                return key
+
+    raise ValueError(
+        "Could not infer the DeepBacs paired dataset from config. "
+        "Set paired_dataset_name to one of: "
+        + ", ".join(sorted(PAIR_SOURCE_PATTERNS.keys()))
+    )
+
+
+def _resolve_pair_sources(pair_key: str):
+    canonical = _canonicalize_pair_key(pair_key)
+    return PAIR_SOURCE_PATTERNS[canonical]
 
 
 def _match_text(img_path: Path, match_source: str) -> str:

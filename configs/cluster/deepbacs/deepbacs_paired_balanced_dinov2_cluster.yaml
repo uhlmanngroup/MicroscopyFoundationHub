@@ -12,6 +12,7 @@ results_root: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/seg/paired"
 task_type: "aureus-subtilis"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
+paired_dataset_name: "aureus-subtilis"
 
 dataset:
   type: paired
@@ -20,20 +21,14 @@ dataset:
     recursive: false
 
 # ---- balanced sampling ----
-# Balanced batches enforce batch_size=2 and yield exactly one sample from each group.
-# Update the patterns below for other paired combinations.
-# Common DeepBacs pairings observed so far:
+# Balanced batches enforce batch_size=2 and yield exactly one sample from each source.
+# The script infers the source split from `paired_dataset_name` (or from train_img_dir if omitted).
+# Known mappings:
 #   aureus-subtilis -> jenilered + test
 #   coli-aureus     -> pos + jenilered
 #   coli-subtilis   -> pos + test
 balanced_sampling:
   match_source: path
-  group_a:
-    name: "jenilered"
-    patterns: ["jenilered"]
-  group_b:
-    name: "test"
-    patterns: ["test"]
 
 # ---- model / backbone ----
 backbone:

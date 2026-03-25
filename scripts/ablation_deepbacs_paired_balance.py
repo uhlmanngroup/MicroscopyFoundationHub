@@ -8,6 +8,8 @@ Example (local):
 """
 import argparse
 import random
+import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -275,6 +277,19 @@ def _run_variant(variant, tuning_mode, seed, base_cfg, out_root: Path | None, ep
         )
 
     trainer.train()
+
+    eval_csv = run_dir / f"{variant}_{tuning_mode}_metrics_test.csv"
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/eval_em_seg.py",
+            "--cfg",
+            str(cfg_path),
+            "--out_csv",
+            str(eval_csv),
+        ],
+        check=True,
+    )
 
 
 def main():

@@ -9,7 +9,7 @@ test_mask_dir: "/home/cfuste/data/datasets/deepbacs/paired/aureus-subtilis/test/
 # ---- results ----
 experiment_id: "2026-03-24_deepbacs_paired_aureus-subtilis_dinov2_balance_ablation"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/seg/paired"
-task_type: "aureus-subtilis"
+task_type: "aureus-subtilis-frozen-balanced"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
 paired_dataset_name: "aureus-subtilis"

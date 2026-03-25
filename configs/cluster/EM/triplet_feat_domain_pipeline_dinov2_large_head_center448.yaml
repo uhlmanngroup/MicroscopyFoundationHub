@@ -7,7 +7,7 @@ task_type: "feat-analysis/em-triplet-center448"
 modality: "em"
 
 data:
-  data_dir: "/home/cfuste/data/datasets/TRIPLET/test/images"
+  data_dir: "/home/cfuste/data/datasets/EM/TRIPLET/test/images"
   expected_groups: 3
 
 model:

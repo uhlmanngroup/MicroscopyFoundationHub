@@ -16,10 +16,16 @@ from torch.utils.data import DataLoader
 
 from dino_peft.trainers.seg_trainer import SegTrainer
 
+SOURCE_ALIASES = {
+    "aureus": ("aureus", "jenilered"),
+    "coli": ("coli", "pos"),
+    "subtilis": ("subtilis", "test"),
+}
+
 PAIR_SOURCE_PATTERNS = {
-    "aureus-subtilis": ("jenilered", "test"),
-    "coli-aureus": ("pos", "jenilered"),
-    "coli-subtilis": ("pos", "test"),
+    "aureus-subtilis": ("aureus", "subtilis"),
+    "coli-aureus": ("coli", "aureus"),
+    "coli-subtilis": ("coli", "subtilis"),
 }
 
 
@@ -88,8 +94,8 @@ def _parse_balanced_sampling_cfg(cfg: dict):
     return {
         "group_a_name": group_a_name,
         "group_b_name": group_b_name,
-        "group_a_patterns": [group_a_name],
-        "group_b_patterns": [group_b_name],
+        "group_a_patterns": [p.lower() for p in SOURCE_ALIASES.get(group_a_name, (group_a_name,))],
+        "group_b_patterns": [p.lower() for p in SOURCE_ALIASES.get(group_b_name, (group_b_name,))],
         "match_source": match_source,
         "pair_key": pair_key,
     }

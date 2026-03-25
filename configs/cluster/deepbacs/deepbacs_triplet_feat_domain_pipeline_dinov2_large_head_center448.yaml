@@ -1,13 +1,13 @@
 # Cluster pipeline config: extract features -> PCA/UMAP -> pairwise domain analysis
-# on the DeepBacs triplet dataset, using a fixed 448x448 center crop.
+# on the DeepBacs triple dataset, using a fixed 448x448 center crop.
 
-experiment_id: "2026-03-19_deepbacs_triplet_dinov2-large_head_feats_analysis_center448"
+experiment_id: "2026-03-19_deepbacs_triple_dinov2-large_head_feats_analysis_center448"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
-task_type: "feat-analysis/deepbacs-triplet-center448"
+task_type: "feat-analysis/deepbacs-triple-center448"
 modality: "deepbacs"
 
 data:
-  data_dir: "/home/cfuste/data/datasets/deepbacs/triplet/test/images"
+  data_dir: "/home/cfuste/data/datasets/deepbacs/triple/coli-aureus-subtilis/test/images"
   expected_groups: 3
 
 model:

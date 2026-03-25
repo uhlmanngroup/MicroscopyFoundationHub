@@ -68,6 +68,7 @@ For a full list of entrypoints and their purpose, see `scripts/README.md`.
 **Modality Notes**
 - `modality: em`: existing EM behavior/configs.
 - `modality: deepbacs`: pipeline enforces `img_size.mode: native` and a paired center crop of `448x448` (image + mask) for train/val/test. This avoids resizing artifacts and keeps inputs compatible with patch sizes 14 and 16.
+- Expected DeepBacs layout on the cluster is now explicit: `single/<dataset>/...`, `paired/<combo>/...`, and `triple/coli-aureus-subtilis/...`.
 
 **DINOv3 Weights**
 

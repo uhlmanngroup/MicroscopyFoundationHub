@@ -23,10 +23,8 @@ dataset:
 # ---- balanced sampling ----
 # Balanced batches enforce batch_size=2 and yield exactly one sample from each source.
 # The script infers the source split from `paired_dataset_name` (or from train_img_dir if omitted).
-# Known mappings:
-#   aureus-subtilis -> jenilered + test
-#   coli-aureus     -> pos + jenilered
-#   coli-subtilis   -> pos + test
+# Canonical source names in the composed datasets are:
+#   aureus, coli, subtilis
 balanced_sampling:
   match_source: path
 

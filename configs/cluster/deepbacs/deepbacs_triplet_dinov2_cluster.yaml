@@ -1,15 +1,15 @@
 # Environment: cluster (UZH Science) - DeepBacs triplet dataset
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/deepbacs/triplet/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/deepbacs/triplet/train/masks"
-test_img_dir: "/home/cfuste/data/datasets/deepbacs/triplet/test/images"
-test_mask_dir: "/home/cfuste/data/datasets/deepbacs/triplet/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/deepbacs/triple/coli-aureus-subtilis/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/deepbacs/triple/coli-aureus-subtilis/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/deepbacs/triple/coli-aureus-subtilis/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/deepbacs/triple/coli-aureus-subtilis/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_triplet_dinov2_lora_seg"
+experiment_id: "2026-03-03_deepbacs_triple_coli-aureus-subtilis_dinov2_lora_seg"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
-task_type: "seg"
+task_type: "coli-aureus-subtilis-lora"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
 

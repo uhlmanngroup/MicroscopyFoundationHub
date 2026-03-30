@@ -22,7 +22,7 @@ domain_analysis:
       npz: "/home/cfuste/data/DINO-LoRA/dinov2/openimages/feat-analysis/domain-shift/2026-03-30_domain_shift_openimages_dinov2-large/features.npz"
   n_components: 64
   seed: 0
-  output_subdir: "domain-analysis"
+  out_dir: "/home/cfuste/data/DINO-LoRA/dinov2/domain-analysis/3way/2026-03-30_domain_shift_3way_dinov2-large"
   json_name: "pairwise_metrics.json"
   csv_name: "pairwise_metrics.csv"
   use_run_dir_metrics: false

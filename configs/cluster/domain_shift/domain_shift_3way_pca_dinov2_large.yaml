@@ -1,0 +1,30 @@
+# Cluster PCA/UMAP config for the merged 3-way domain-shift feature bundle.
+#
+# Edit before running on the cluster:
+# - results_root
+# - data.input_path if you move the merged NPZ
+# - experiment_id (optional)
+
+experiment_id: "2026-03-30_domain_shift_3way_pca_dinov2-large"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+task_type: "3way"
+modality: "domain-analysis"
+
+data:
+  input_path: "/home/cfuste/data/DINO-LoRA/dinov2/domain-analysis/3way/2026-03-30_domain_shift_3way_dinov2-large/features_merged.npz"
+
+pca:
+  n_components: 50
+  plot_dims: [0, 1]
+  whiten: false
+  l2norm: false
+  seed: 0
+
+umap:
+  enabled: true
+  pca_dim: 50
+  n_neighbors: 15
+  min_dist: 0.1
+  n_components: 2
+  metric: euclidean
+  seed: 0

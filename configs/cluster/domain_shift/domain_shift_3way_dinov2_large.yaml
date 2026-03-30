@@ -1,0 +1,30 @@
+# Cluster domain-analysis config for explicit 3-way comparison:
+#   EM vs DeepBacs vs OpenImages
+#
+# Edit before running on the cluster:
+# - results_root
+# - experiment_id (optional)
+# - the three `npz` paths below if you change experiment ids / task types
+
+experiment_id: "2026-03-30_domain_shift_3way_dinov2-large_head_center224"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+task_type: "domain-analysis/domain-shift-3way"
+modality: "domainshift"
+
+domain_analysis:
+  mode: pairwise_all
+  domains:
+    - name: em
+      npz: "/home/cfuste/data/DINO-LoRA/dinov2/em/feat-analysis/domain-shift/em/2026-03-30_domain_shift_em_dinov2-large_head_center224/features.npz"
+    - name: deepbacs
+      npz: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/feat-analysis/domain-shift/deepbacs/2026-03-30_domain_shift_deepbacs_dinov2-large_head_center224/features.npz"
+    - name: openimages
+      npz: "/home/cfuste/data/DINO-LoRA/dinov2/openimages/feat-analysis/domain-shift/openimages/2026-03-30_domain_shift_openimages_dinov2-large_head_center224/features.npz"
+  n_components: 64
+  seed: 0
+  output_subdir: "domain-analysis"
+  json_name: "pairwise_metrics.json"
+  csv_name: "pairwise_metrics.csv"
+  use_run_dir_metrics: false
+
+clahe_norm: false

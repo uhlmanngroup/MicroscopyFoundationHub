@@ -1,0 +1,35 @@
+# Cluster feature extraction config for the staged Open Images domain-shift set.
+#
+# Edit before running on the cluster:
+# - data.data_dir
+# - results_root
+# - experiment_id (optional)
+
+experiment_id: "2026-03-30_domain_shift_openimages_dinov2-large_head_center224"
+results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+task_type: "feat-analysis/domain-shift/openimages"
+modality: "openimages"
+
+data:
+  data_dir: "/home/cfuste/data/datasets/domain_shift/openimages/images"
+
+model:
+  backbone:
+    name: dinov2
+    variant: large
+    load_backend: torchhub
+    weights: null
+    repo_dir: null
+    preprocess:
+      preset: em
+  checkpoint: null
+
+runtime:
+  batch_size: 8
+  num_workers: 4
+  device: "auto"
+  center_crop_size: 224
+  img_size:
+    mode: native
+
+clahe_norm: false

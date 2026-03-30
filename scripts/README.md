@@ -34,6 +34,8 @@ Postprocess example:
 
 ## Data And Utilities
 - `scripts/data/compose_em_datasets.py`: build the paired Lucchi++/Droso dataset layout
+- `scripts/data/download_openimages_subset.py`: sample and download a small random Open Images subset (e.g. 500 validation images)
+- `scripts/data/stage_domain_shift_sets.py`: copy flat EM / DeepBacs / Open Images folders plus metadata for feature-only domain analysis
 - `scripts/utils/move_result_logs.py`: backfill Slurm logs into run dirs
 - `scripts/utils/param_count_table.py`: parameter count table for backbones and LoRA
 - `scripts/utils/tile_paired_dirs.py`: tile paired image/mask folders into fixed-size patches (e.g., 512x512)

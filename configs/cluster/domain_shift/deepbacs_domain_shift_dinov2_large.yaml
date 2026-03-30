@@ -5,9 +5,9 @@
 # - results_root
 # - experiment_id (optional)
 
-experiment_id: "2026-03-30_domain_shift_deepbacs_dinov2-large_head_center224"
+experiment_id: "2026-03-30_domain_shift_deepbacs_dinov2-large"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
-task_type: "feat-analysis/domain-shift/deepbacs"
+task_type: "feat-analysis/domain-shift/"
 modality: "deepbacs"
 
 data:

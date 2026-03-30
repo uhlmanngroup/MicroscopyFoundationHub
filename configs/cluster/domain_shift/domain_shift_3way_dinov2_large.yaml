@@ -6,20 +6,20 @@
 # - experiment_id (optional)
 # - the three `npz` paths below if you change experiment ids / task types
 
-experiment_id: "2026-03-30_domain_shift_3way_dinov2-large_head_center224"
+experiment_id: "2026-03-30_domain_shift_3way_dinov2-large"
 results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
-task_type: "domain-analysis/domain-shift-3way"
-modality: "domainshift"
+task_type: "3way"
+modality: "domain-analysis"
 
 domain_analysis:
   mode: pairwise_all
   domains:
     - name: em
-      npz: "/home/cfuste/data/DINO-LoRA/dinov2/em/feat-analysis/domain-shift/em/2026-03-30_domain_shift_em_dinov2-large_head_center224/features.npz"
+      npz: "/home/cfuste/data/DINO-LoRA/dinov2/em/feat-analysis/domain-shift/2026-03-30_domain_shift_em_dinov2-large/features.npz"
     - name: deepbacs
-      npz: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/feat-analysis/domain-shift/deepbacs/2026-03-30_domain_shift_deepbacs_dinov2-large_head_center224/features.npz"
+      npz: "/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/feat-analysis/domain-shift/2026-03-30_domain_shift_deepbacs_dinov2-large/features.npz"
     - name: openimages
-      npz: "/home/cfuste/data/DINO-LoRA/dinov2/openimages/feat-analysis/domain-shift/openimages/2026-03-30_domain_shift_openimages_dinov2-large_head_center224/features.npz"
+      npz: "/home/cfuste/data/DINO-LoRA/dinov2/openimages/feat-analysis/domain-shift/2026-03-30_domain_shift_openimages_dinov2-large/features.npz"
   n_components: 64
   seed: 0
   output_subdir: "domain-analysis"

@@ -87,13 +87,13 @@ def _resolve_modality(cfg: dict) -> str:
 def _resolve_img_size(cfg: dict):
     modality = _resolve_modality(cfg)
     img_size_cfg = cfg.get("img_size")
-    if modality == "deepbacs":
+    if modality in ("deepbacs", "monusac"):
         requested_mode = None
         if isinstance(img_size_cfg, dict):
             requested_mode = str(img_size_cfg.get("mode", "")).lower()
         if requested_mode != "native":
             print(
-                "[eval_em_seg] modality=deepbacs forces img_size.mode='native' "
+                f"[eval_em_seg] modality={modality} forces img_size.mode='native' "
                 "(no resizing in pipeline)."
             )
         img_size_cfg = {"mode": "native"}
@@ -130,7 +130,7 @@ def build_dataset_from_cfg(cfg, split: str, transform):
         dataset_params.setdefault("image_prefix", "mask")
     elif dataset_type == "droso":
         dataset_params.setdefault("recursive", True)
-    if modality == "deepbacs":
+    if modality in ("deepbacs", "monusac"):
         deepbacs_crop = int(cfg.get("deepbacs_center_crop_size", 448))
         dataset_params["center_crop_size"] = deepbacs_crop
     dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
@@ -391,7 +391,7 @@ def _build_dataset(cfg, split: str, transform):
     dataset_cfg = cfg.get("dataset", {})
     dataset_type = str(dataset_cfg.get("type", "lucchi")).lower()
     params = dataset_cfg.get("params") or {}
-    if modality == "deepbacs":
+    if modality in ("deepbacs", "monusac"):
         params = dict(params)
         params["center_crop_size"] = int(cfg.get("deepbacs_center_crop_size", 448))
     common = dict(

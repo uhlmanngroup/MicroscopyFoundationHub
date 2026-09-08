@@ -1,0 +1,61 @@
+# Environment: cluster (UZH Science) - MoNuSAC Epithelial single dataset
+
+# ---- I/O ----
+train_img_dir: "/home/cfuste/data/datasets/monusac/epithelial/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/monusac/epithelial/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/monusac/epithelial/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/monusac/epithelial/test/masks"
+
+# ---- results ----
+experiment_id: "2026-09-08_monusac_epithelial_dinov3_lora_seg"
+results_root: "/home/cfuste/scratch/DINO-LoRA/dinov3/seg"
+task_type: "epithelial-lora"
+modality: "monusac"
+deepbacs_center_crop_size: 448
+
+dataset:
+  type: paired
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+backbone:
+  name: dinov3
+  variant: vitl16
+  load_backend: torchhub
+  repo_dir: /home/cfuste/GitHub/dinov3
+  weights: /home/cfuste/scratch/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+  preprocess:
+    preset: em
+dino_size: vitl16
+img_size:
+  mode: native
+num_classes: 2
+
+# ---- fine-tuning ----
+use_lora: true
+full_finetune: false
+
+# ---- training ----
+batch_size: 2
+epochs: 1000
+patience: 20
+lr: 0.00005
+weight_decay: 0.0001
+num_workers: 4
+device: auto
+amp: false
+val_ratio: 0.1
+split_seed: 42
+data_augmentation: false
+data_augmentation_prob: 0.5
+clahe_norm: false
+
+# ---- loss ----
+loss: dice
+
+# ---- safety / export ----
+clip_grad_norm: 1.0
+binarize: true
+binarize_threshold: 128

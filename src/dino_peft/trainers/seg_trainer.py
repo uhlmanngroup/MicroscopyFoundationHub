@@ -130,14 +130,14 @@ class SegTrainer:
             )
         self.cfg["deepbacs_center_crop_size"] = self.deepbacs_center_crop_size
 
-        if self.modality == "deepbacs":
+        if self.modality in ("deepbacs", "monusac"):
             requested_img_size = self.cfg.get("img_size")
             requested_mode = None
             if isinstance(requested_img_size, dict):
                 requested_mode = str(requested_img_size.get("mode", "")).lower()
             if requested_mode != "native":
                 print(
-                    "[SegTrainer] modality=deepbacs forces img_size.mode='native' "
+                    f"[SegTrainer] modality={self.modality} forces img_size.mode='native' "
                     "(no resizing in pipeline)."
                 )
             self.img_size_cfg = {"mode": "native"}
@@ -212,7 +212,7 @@ class SegTrainer:
             dataset_params.setdefault("image_prefix", "mask")
         elif dataset_type == "droso":
             dataset_params.setdefault("recursive", True)
-        if self.modality == "deepbacs":
+        if self.modality in ("deepbacs", "monusac"):
             dataset_params["center_crop_size"] = self.deepbacs_center_crop_size
         dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 

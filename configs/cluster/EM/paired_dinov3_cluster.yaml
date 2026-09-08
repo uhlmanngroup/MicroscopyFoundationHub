@@ -9,7 +9,7 @@ test_mask_dir:   "/home/cfuste/data/datasets/TRIPLET/test/masks"
 
 # results + experiment naming
 experiment_id: "2025-02-26_TRIPLET_dinov3_fullft"
-results_root: "/home/cfuste/data/DINO-LoRA/dinov3/seg/"
+results_root: "/home/cfuste/scratch/DINO-LoRA/dinov3/seg"
 task_type: "triplet-fullft"
 
 dataset:

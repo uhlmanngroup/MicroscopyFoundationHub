@@ -44,8 +44,7 @@ REPEATS=${REPEATS:-5}
 BASE_SEED=${BASE_SEED:-1}
 BASE_SPLIT_SEED=${BASE_SPLIT_SEED:-101}
 
-COMBO="coli-aureus-subtilis"
-DATA_ROOT="/home/cfuste/data/datasets/deepbacs/triple"
+DATA_ROOT="/home/cfuste/data/datasets/deepbacs/triplet"
 
 archive_slurm_log() {
   local dest_dir="$1" tag="$2"
@@ -89,8 +88,8 @@ backbone["name"] = backbone_name or backbone.get("name", "dinov3")
 backbone["variant"] = size
 cfg["backbone"] = backbone
 
-# dataset paths (triplet data lives directly under data_root/coli-aureus-subtilis/)
-data_base = pathlib.Path(data_root) / "coli-aureus-subtilis"
+# dataset paths (triplet data lives directly under data_root/train/ and data_root/test/)
+data_base = pathlib.Path(data_root)
 cfg["train_img_dir"]  = str(data_base / "train" / "images")
 cfg["train_mask_dir"] = str(data_base / "train" / "masks")
 cfg["test_img_dir"]   = str(data_base / "test"  / "images")

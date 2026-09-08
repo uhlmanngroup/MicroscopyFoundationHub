@@ -26,7 +26,7 @@ backbone:
   variant: vits16
   load_backend: torchhub
   repo_dir: /home/cfuste/GitHub/dinov3
-  weights: /scratch/cfuste/data/models/dinov3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+  weights: /home/cfuste/scratch/data/models/dinov3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
   preprocess:
     preset: em
 dino_size: vits16

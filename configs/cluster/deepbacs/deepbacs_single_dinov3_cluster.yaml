@@ -8,7 +8,7 @@ test_mask_dir: "/home/cfuste/data/datasets/deepbacs/single/subtilis/test/masks"
 
 # ---- results ----
 experiment_id: "2026-03-03_deepbacs_subtilis_dinov3_lora_seg"
-results_root: "/scratch/cfuste/DINO-LoRA/dinov3/seg"
+results_root: "/home/cfuste/scratch/DINO-LoRA/dinov3/seg"
 task_type: "subtilis-lora"
 modality: "deepbacs"
 deepbacs_center_crop_size: 448
@@ -25,7 +25,7 @@ backbone:
   variant: vitl16
   load_backend: torchhub
   repo_dir: /home/cfuste/GitHub/dinov3
-  weights: /scratch/cfuste/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+  weights: /home/cfuste/scratch/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
   preprocess:
     preset: em
 dino_size: vitl16

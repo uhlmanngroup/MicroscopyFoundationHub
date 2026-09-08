@@ -24,7 +24,7 @@ backbone:
   variant: vitl16
   load_backend: torchhub
   repo_dir: /home/cfuste/GitHub/dinov3
-  weights: /scratch/cfuste/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+  weights: /home/cfuste/scratch/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
   preprocess:
     preset: em
 dino_size: vitl16

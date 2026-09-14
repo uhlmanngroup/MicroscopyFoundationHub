@@ -1,10 +1,10 @@
 # Environment: cluster (UZH Science) - MoNuSAC Lymphocyte single dataset
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/monusac/lymphocyte/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/monusac/lymphocyte/train/masks"
-test_img_dir: "/home/cfuste/data/datasets/monusac/lymphocyte/test/images"
-test_mask_dir: "/home/cfuste/data/datasets/monusac/lymphocyte/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/monusac_448/lymphocyte/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/monusac_448/lymphocyte/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/monusac_448/lymphocyte/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/monusac_448/lymphocyte/test/masks"
 
 # ---- results ----
 experiment_id: "2026-09-08_monusac_lymphocyte_dinov3_lora_seg"

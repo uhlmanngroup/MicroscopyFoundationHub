@@ -50,7 +50,7 @@ REPEATS=${REPEATS:-5}
 BASE_SEED=${BASE_SEED:-1}
 BASE_SPLIT_SEED=${BASE_SPLIT_SEED:-101}
 
-DATA_ROOT="/home/cfuste/data/datasets/monusac"
+DATA_ROOT="/home/cfuste/data/datasets/monusac_448"
 BASE_CFG="configs/cluster/monusac/monusac_${DATASET}_dinov3_cluster.yaml"
 
 archive_slurm_log() {

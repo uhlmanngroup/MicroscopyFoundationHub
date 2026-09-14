@@ -1,10 +1,10 @@
 # Environment: cluster (UZH Science) - MoNuSAC Epithelial single dataset
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/monusac/epithelial/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/monusac/epithelial/train/masks"
-test_img_dir: "/home/cfuste/data/datasets/monusac/epithelial/test/images"
-test_mask_dir: "/home/cfuste/data/datasets/monusac/epithelial/test/masks"
+train_img_dir: "/home/cfuste/data/datasets/monusac_448/epithelial/train/images"
+train_mask_dir: "/home/cfuste/data/datasets/monusac_448/epithelial/train/masks"
+test_img_dir: "/home/cfuste/data/datasets/monusac_448/epithelial/test/images"
+test_mask_dir: "/home/cfuste/data/datasets/monusac_448/epithelial/test/masks"
 
 # ---- results ----
 experiment_id: "2026-09-08_monusac_epithelial_dinov3_lora_seg"

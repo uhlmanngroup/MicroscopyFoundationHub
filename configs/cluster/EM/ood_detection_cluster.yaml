@@ -7,12 +7,12 @@ task_type: "ood-detection"
 
 data:
   id:
-    path: "/home/cfuste/data/datasets/Lucchi++/Train_In"
+    path: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
     recursive: true
     file_glob: ["*.png", "*.tif"]
     sequence_regex: '(?i)lucchi[_-]*(\d+)'
   target:
-    path: "/home/cfuste/data/datasets/Droso/Test_In"
+    path: "/home/cfuste/data/datasets/EM/Droso/Test_In"
     recursive: true
     file_glob: ["*.tif"]
     sequence_regex: '(?i)droso[_-]*(\d+)'

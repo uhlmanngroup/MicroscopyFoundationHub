@@ -8,7 +8,7 @@ results_root: "/home/cfuste/data/DINO-LoRA"
 task_type: "feat-analysis/paired-nolora"
 
 data:
-  data_dir: "/home/cfuste/data/datasets/DINO-POC/test/images"
+  data_dir: "/home/cfuste/data/datasets/EM/DINO-POC/test/images"
 
 model:
   backbone:

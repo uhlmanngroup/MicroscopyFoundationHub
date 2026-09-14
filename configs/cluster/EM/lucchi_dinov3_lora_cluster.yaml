@@ -2,10 +2,10 @@
 # DINOv3 LoRA config.
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/Lucchi++/Train_In"
-train_mask_dir: "/home/cfuste/data/datasets/Lucchi++/Train_Out"
-test_img_dir:    "/home/cfuste/data/datasets/Lucchi++/Test_In"
-test_mask_dir:   "/home/cfuste/data/datasets/Lucchi++/Test_Out"
+train_img_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
+train_mask_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_Out"
+test_img_dir:    "/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
+test_mask_dir:   "/home/cfuste/data/datasets/EM/Lucchi++/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2025-01-02_A1_lucchi-only_dinov3-vits16_lora-r16_seg"

@@ -2,10 +2,10 @@
 # DINOv2 LoRA config.
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/Kasthuri++/Train_In"
-train_mask_dir: "/home/cfuste/data/datasets/Kasthuri++/Train_Out"
-test_img_dir:  "/home/cfuste/data/datasets/Kasthuri++/Test_In"
-test_mask_dir: "/home/cfuste/data/datasets/Kasthuri++/Test_Out"
+train_img_dir: "/home/cfuste/data/datasets/EM/Kasthuri++/Train_In"
+train_mask_dir: "/home/cfuste/data/datasets/EM/Kasthuri++/Train_Out"
+test_img_dir:  "/home/cfuste/data/datasets/EM/Kasthuri++/Test_In"
+test_mask_dir: "/home/cfuste/data/datasets/EM/Kasthuri++/Test_Out"
 
 # results + experiment naming
 experiment_id: "2026-02-27_kasthuri_dinov2_lora_seg"

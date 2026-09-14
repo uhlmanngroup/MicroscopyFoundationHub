@@ -17,7 +17,7 @@ data:
   # The pipeline wrapper will automatically set data.input_path to the generated features.npz.
   # For center-cropped analysis, point this to the cropped dataset produced by
   # scripts/utils/center_crop_triplet_images.py
-  data_dir: "/home/cfuste/data/datasets/TRIPLET/test/images"
+  data_dir: "/home/cfuste/data/datasets/EM/TRIPLET/test/images"
 
 model:
   backbone:

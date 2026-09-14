@@ -2,15 +2,15 @@
 
 # ---- I/O ----
 # DINO-POC (optional):
-# train_img_dir: /home/cfuste/data/datasets/DINO-POC/train/images
-# train_mask_dir: /home/cfuste/data/datasets/DINO-POC/train/masks
-# test_img_dir:    /home/cfuste/data/datasets/DINO-POC/test/images
-# test_mask_dir:   /home/cfuste/data/datasets/DINO-POC/test/masks
+# train_img_dir: /home/cfuste/data/datasets/EM/DINO-POC/train/images
+# train_mask_dir: /home/cfuste/data/datasets/EM/DINO-POC/train/masks
+# test_img_dir:    /home/cfuste/data/datasets/EM/DINO-POC/test/images
+# test_mask_dir:   /home/cfuste/data/datasets/EM/DINO-POC/test/masks
 # Lucchi++:
-train_img_dir: "/home/cfuste/data/datasets/Lucchi++/Train_In"
-train_mask_dir: "/home/cfuste/data/datasets/Lucchi++/Train_Out"
-test_img_dir:    "/home/cfuste/data/datasets/Lucchi++/Test_In"
-test_mask_dir:   "/home/cfuste/data/datasets/Lucchi++/Test_Out"
+train_img_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
+train_mask_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_Out"
+test_img_dir:    "/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
+test_mask_dir:   "/home/cfuste/data/datasets/EM/Lucchi++/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2026-01-19_dinov2-ablationstudy-base_seg"

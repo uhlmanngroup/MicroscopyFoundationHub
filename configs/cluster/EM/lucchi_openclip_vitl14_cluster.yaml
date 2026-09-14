@@ -2,10 +2,10 @@
 # OpenCLIP ViT-L-14 config.
 
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/Lucchi++/Train_In"
-train_mask_dir: "/home/cfuste/data/datasets/Lucchi++/Train_Out"
-test_img_dir:    "/home/cfuste/data/datasets/Lucchi++/Test_In"
-test_mask_dir:   "/home/cfuste/data/datasets/Lucchi++/Test_Out"
+train_img_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
+train_mask_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_Out"
+test_img_dir:    "/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
+test_mask_dir:   "/home/cfuste/data/datasets/EM/Lucchi++/Test_Out"
 
 # results + experiment naming
 experiment_id: "2026-01-26_lucchi_openclip_vitl14_NOlora-r16_seg"

@@ -42,18 +42,18 @@ RESULTS_ROOT="/home/cfuste/scratch/DINO-LoRA/dinov3/seg"
 case "$DATASET" in
   droso)
     BASE_CFG="configs/cluster/EM/droso_dinov3_cluster.yaml"
-    TRAIN_IMG="/home/cfuste/data/datasets/Droso/Train_In"
-    TEST_IMG="/home/cfuste/data/datasets/Droso/Test_In"
+    TRAIN_IMG="/home/cfuste/data/datasets/EM/Droso/Train_In"
+    TEST_IMG="/home/cfuste/data/datasets/EM/Droso/Test_In"
     ;;
   kasthuri)
     BASE_CFG="configs/cluster/EM/kasthuri_dinov3_head_cluster.yaml"
-    TRAIN_IMG="/home/cfuste/data/datasets/Kasthuri++/Train_In"
-    TEST_IMG="/home/cfuste/data/datasets/Kasthuri++/Test_In"
+    TRAIN_IMG="/home/cfuste/data/datasets/EM/Kasthuri++/Train_In"
+    TEST_IMG="/home/cfuste/data/datasets/EM/Kasthuri++/Test_In"
     ;;
   lucchi)
     BASE_CFG="configs/cluster/EM/lucchi_dinov3_head_cluster.yaml"
-    TRAIN_IMG="/home/cfuste/data/datasets/Lucchi++/Train_In"
-    TEST_IMG="/home/cfuste/data/datasets/Lucchi++/Test_In"
+    TRAIN_IMG="/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
+    TEST_IMG="/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
     ;;
   *)
     echo "[error] Unknown DATASET='$DATASET'. Use: droso | kasthuri | lucchi" >&2

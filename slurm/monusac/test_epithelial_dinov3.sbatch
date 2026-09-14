@@ -30,7 +30,7 @@ echo "[smoketest] train..."
 "$PY" scripts/train_em_seg.py --cfg "$CFG"
 
 echo "[smoketest] eval..."
-RUN_DIR=$(python - "$CFG" <<'PY'
+RUN_DIR=$("$PY" - "$CFG" <<'PY'
 import yaml, pathlib, sys
 cfg = yaml.safe_load(open(sys.argv[1]))
 root = pathlib.Path(cfg["results_root"])

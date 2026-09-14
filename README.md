@@ -165,6 +165,29 @@ To build the EM composed layout, edit paths in `scripts/data/compose_em_datasets
 python scripts/data/compose_em_datasets.py
 ```
 
+---
+**NOTE (MoNuSAC preprocessing — to clean up before final release)**
+
+MoNuSAC patches come from WSI crops and have highly variable sizes (min dim ranges from 33px to 1760px; median ~420px). A center crop of 448×448 fails on ~54% of patches. Key size stats:
+
+- 3 patches with min dim < 50px (33, 35, 37px) — all in test set, boundary crops from same patient
+- 9 patches with min dim 50–100px (mostly test)
+- ~125 patches with min dim 100–400px
+- ~54% of all patches (train+test) have at least one dimension < 448px
+
+**Decided preprocessing strategy for MoNuSAC:**
+- Drop patches with min dimension < 200px (removes ~37 patches, ~13% of dataset)
+- For remaining patches with min dim in [200, 448): resize to 448×448
+- For patches with min dim ≥ 448: center crop to 448×448
+
+This avoids extreme scale inconsistency from resizing tiny patches (a 33px patch resized to 448 would be ~13× upscaled, making objects appear at completely different scale than large patches cropped down).
+
+The two target datasets are **Epithelial** and **Lymphocyte** (same-image/different-mask contrast for salient vs. non-salient cell types). All four cell types share identical underlying patches.
+
+TODO: implement this filtering + mixed resize/crop logic before running final MoNuSAC experiments.
+
+---
+
 **Cite**
 
 If you use this work, cite the arXiv preprint [arXiv:2602.08505](https://arxiv.org/abs/2602.08505). The BibTeX entry is available on the arXiv page.

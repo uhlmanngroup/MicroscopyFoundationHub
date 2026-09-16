@@ -21,7 +21,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
-BASE_CFG=${BASE_CFG:-configs/cluster/kasthuri_dinov2_head_cluster.yaml}
+BASE_CFG=${BASE_CFG:-configs/cluster/EM/kasthuri_dinov2_head_cluster.yaml}
 DINO_SIZES=${DINO_SIZES:-"large"}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov2}
 EPOCHS=${EPOCHS:-}

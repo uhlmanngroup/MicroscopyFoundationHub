@@ -19,7 +19,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
-BASE_CFG="${BASE_CFG:-configs/cluster/paired_feat_analysis_cluster.yaml}"
+BASE_CFG="${BASE_CFG:-configs/cluster/EM/paired_feat_analysis_cluster.yaml}"
 DINO_SIZES=${DINO_SIZES:-"small base large giant"}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov2}
 BATCH_DEFAULT=${BATCH_DEFAULT:-${BATCH_SIZE:-}}

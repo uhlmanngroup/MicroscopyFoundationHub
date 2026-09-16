@@ -54,6 +54,7 @@ from dino_peft.backbones import (
 from dino_peft.models.lora import apply_peft
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
 from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
+from dino_peft.config import load_config
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # load incomplete TIFFs instead of crashing
 
@@ -103,8 +104,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open("r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(path)
     if not cfg:
         raise ValueError(f"Config file {path} is empty or invalid.")
     return cfg

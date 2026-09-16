@@ -1,15 +1,17 @@
 # Environment: cluster (UZH Science) - Lucchi++ segmentation run
 # DINOv3 LoRA config.
 
+extends: defaults
+
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
-train_mask_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_Out"
-test_img_dir:    "/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
-test_mask_dir:   "/home/cfuste/data/datasets/EM/Lucchi++/Test_Out"
+train_img_dir: "${data_root}/EM/Lucchi++/Train_In"
+train_mask_dir: "${data_root}/EM/Lucchi++/Train_Out"
+test_img_dir:    "${data_root}/EM/Lucchi++/Test_In"
+test_mask_dir:   "${data_root}/EM/Lucchi++/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2026-02-12_A1_lucchi_dinov3-vits16_fullft_seg"
-results_root: "/home/cfuste/data/DINO-LoRA/dinov3/seg"
+results_root: "${results_root}/dinov3/seg"
 task_type: "lucchi-fullft"
 
 # dataset pairing (Lucchi images are named maskXXXX vs masks as digits)
@@ -25,8 +27,8 @@ backbone:
   name: dinov3
   variant: vitl16
   load_backend: torchhub
-  repo_dir: /home/cfuste/GitHub/dinov3
-  weights: /home/cfuste/scratch/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+  repo_dir: ${dinov3_repo}
+  weights: ${models_root}/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
   preprocess:
     preset: em
 dino_size: vitl16
@@ -41,8 +43,6 @@ full_finetune: true
 
 # ---- LoRA ----
 use_lora: false
-lora_rank: 16
-lora_alpha: 32
 lora:
   enabled: false
   target_policy: vit_attention_only
@@ -52,29 +52,13 @@ lora:
 
 # ---- training ----
 batch_size: 2          # tightened for low-memory smoke tests on standard GPUs
-epochs: 1000
-patience: 20
-lr: 0.00005
-weight_decay: 0.0001
 num_workers: 0
-device: auto
 amp: false            # first run: stability check without AMP
-val_ratio: 0.1
-split_seed: 42
 
 # ---- loss (CE + Tversky on foreground) ----
 loss: dice      # ce, dice, ce_tversky
 class_weights: [1.0, 15.0]    # bg, fg
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
 tversky_weight: 0.6   # lambda: 0.6*Tversky + 0.4*CE
 
 # ---- training safety ----
 clip_grad_norm: 1.0   # global grad clip
-
-# ---- export / viz (kept; argmax is used for CE path) ----
-binarize: true
-binarize_threshold: 128
-
-clahe_norm: false

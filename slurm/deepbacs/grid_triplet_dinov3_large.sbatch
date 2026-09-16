@@ -1,6 +1,6 @@
 #!/usr/bin/bash -l
 #SBATCH --job-name=deepbacs-triplet-dinov3l
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100
 #SBATCH --cpus-per-task=4
@@ -8,169 +8,67 @@
 #SBATCH --output=logs/%x-%A_%a.out
 
 # -----------------------------------------------------------------------
-# DeepBacs triplet (all 3 species) — DINOv3-L/16
+# DeepBacs triplet (coli + aureus + subtilis) — DINOv3-L/16
 #
 # Control via env vars:
-#   TUNING_MODE  head | lora | fullft  (default: lora)
-#   REPEATS      number of seeds       (default: 5)
+#   TUNING_MODE  head | lora | fullft    (default: lora)
+#   REPEATS      number of seeds to run  (default: 5)
 #
-# Usage:
+# Submit every regime at once:
 #   bash slurm/deepbacs/submit_dinov3_triplet.sh
 # -----------------------------------------------------------------------
 
-set -euo pipefail
-module --quiet load miniforge3 || module load miniforge3
+# sbatch runs a spool copy of this file, so resolve the repo from the submit dir.
+source "${SLURM_SUBMIT_DIR:-$PWD}/slurm/lib/common.sh"
+dino_peft_init
 
-PY="$HOME/data/conda/envs/dino-peft/bin/python"
-[ -x "$PY" ] || { echo "Python not found at $PY"; exit 1; }
-
-cd "${SLURM_SUBMIT_DIR:-$PWD}"
-mkdir -p logs runs
-
-export PYTHONUNBUFFERED=1
-export PYTHONPATH="$PWD/src"
-export TQDM_DISABLE=1
-export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
-
+COMBO="coli-aureus-subtilis"
+TUNING_MODE=${TUNING_MODE:-lora}    # head | lora | fullft
 BASE_CFG=${BASE_CFG:-configs/cluster/deepbacs/deepbacs_triplet_dinov3_cluster.yaml}
 DINO_SIZE=${DINO_SIZE:-vitl16}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov3}
-TUNING_MODE=${TUNING_MODE:-lora}    # head | lora | fullft
-EPOCHS=${EPOCHS:-}
-BATCH_SIZE=${BATCH_SIZE:-}
-NUM_WORKERS=${NUM_WORKERS:-}
-AMP=${AMP:-}
 REPEATS=${REPEATS:-5}
 BASE_SEED=${BASE_SEED:-1}
 BASE_SPLIT_SEED=${BASE_SPLIT_SEED:-101}
+DATA_ROOT=${DATA_ROOT:-"$(dino_peft_path data_root)/deepbacs/triplet"}
 
-DATA_ROOT="/home/cfuste/data/datasets/deepbacs/triplet"
-
-archive_slurm_log() {
-  local dest_dir="$1" tag="$2"
-  local src="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}.out"
-  if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
-    local array_src="${SLURM_SUBMIT_DIR:-$PWD}/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out"
-    [ -f "$array_src" ] && src="$array_src"
-  fi
-  if [ -f "$src" ]; then
-    local dest="${dest_dir}/logs/${tag}_slurm.out"
-    mkdir -p "$(dirname "$dest")"
-    mv "$src" "$dest"
-    echo "[log] moved slurm log -> $dest"
-  else
-    echo "[log] slurm output not found at $src" >&2
-  fi
-}
-
-prepare_cfg() {
-  local base_cfg="$1" size="$2" epochs="$3" batch="$4" workers="$5" amp="$6" \
-        seed="$7" split_seed="$8" tag="$9" backbone_name="${10}" \
-        tuning_mode="${11}" data_root="${12}"
-  "$PY" - "$base_cfg" "$size" "$epochs" "$batch" "$workers" "$amp" \
-          "$seed" "$split_seed" "$tag" "$backbone_name" \
-          "$tuning_mode" "$data_root" <<'PY'
-import pathlib
-import sys
-import tempfile
-import yaml
-
-(base_cfg, size, epochs, batch, workers, amp,
- seed, split_seed, tag, backbone_name,
- tuning_mode, data_root) = sys.argv[1:]
-
-cfg = yaml.safe_load(open(base_cfg))
-
-# backbone
-cfg["dino_size"] = size
-backbone = cfg.get("backbone") or {}
-backbone["name"] = backbone_name or backbone.get("name", "dinov3")
-backbone["variant"] = size
-cfg["backbone"] = backbone
-
-# dataset paths (triplet data lives directly under data_root/train/ and data_root/test/)
-data_base = pathlib.Path(data_root)
-cfg["train_img_dir"]  = str(data_base / "train" / "images")
-cfg["train_mask_dir"] = str(data_base / "train" / "masks")
-cfg["test_img_dir"]   = str(data_base / "test"  / "images")
-cfg["test_mask_dir"]  = str(data_base / "test"  / "masks")
-
-# tuning mode
-if tuning_mode == "head":
-    cfg["use_lora"]      = False
-    cfg["full_finetune"] = False
-    if "lora" in cfg:
-        cfg["lora"]["enabled"] = False
-    mode_tag = "head"
-elif tuning_mode == "fullft":
-    cfg["use_lora"]      = False
-    cfg["full_finetune"] = True
-    if "lora" in cfg:
-        cfg["lora"]["enabled"] = False
-    cfg["batch_size"] = 1
-    mode_tag = "fullft"
-else:  # lora
-    cfg["use_lora"]      = True
-    cfg["full_finetune"] = False
-    if "lora" in cfg:
-        cfg["lora"]["enabled"] = True
-    mode_tag = "lora"
-
-# training hyperparams
-if seed:       cfg["seed"]        = int(seed)
-if split_seed: cfg["split_seed"]  = int(split_seed)
-if epochs:     cfg["epochs"]      = max(1, int(epochs))
-if batch:      cfg["batch_size"]  = max(1, int(batch))
-if workers:    cfg["num_workers"] = max(0, int(workers))
-if amp:        cfg["amp"]         = amp.lower() not in ("0", "false", "no", "off")
-
-# identifiers
-tag = tag or "manual"
-cfg["task_type"]     = f"coli-aureus-subtilis-{mode_tag}"
-cfg["experiment_id"] = f"2026-09-08_deepbacs_triplet_coli-aureus-subtilis_dinov3_{mode_tag}_seg_{tag}"
-root = pathlib.Path(cfg.get("results_root", "runs")).expanduser()
-cfg["results_root"]  = str(root)
-out_dir = root / "deepbacs" / cfg["task_type"] / cfg["experiment_id"]
-cfg["out_dir"]       = str(out_dir)
-
-tmp = tempfile.NamedTemporaryFile(prefix=f"{tag}_", suffix=".yaml", delete=False)
-with open(tmp.name, "w") as f:
-    yaml.safe_dump(cfg, f, sort_keys=False)
-print(tmp.name)
-print(cfg["out_dir"])
-PY
-}
+# Full fine-tuning holds the whole backbone in memory; everything else fits at 2.
+BATCH_SIZE=${BATCH_SIZE:-}
+if [ -z "$BATCH_SIZE" ] && [ "$TUNING_MODE" = "fullft" ]; then
+  BATCH_SIZE=1
+fi
 
 run_rep() {
   local rep_idx="$1"
   local seed=$((BASE_SEED + rep_idx))
   local split_seed=$((BASE_SPLIT_SEED + rep_idx))
-  local rep_tag="rep$((rep_idx + 1))"
+  local tag="rep$((rep_idx + 1))"
 
-  mapfile -t prep < <(prepare_cfg \
-    "$BASE_CFG" "$DINO_SIZE" "$EPOCHS" "$BATCH_SIZE" "$NUM_WORKERS" "$AMP" \
-    "$seed" "$split_seed" "$rep_tag" "$BACKBONE_NAME" \
-    "$TUNING_MODE" "$DATA_ROOT")
+  # note: ${extra[@]+...} keeps an empty array safe under `set -u`
+  local extra=()
+  [ -n "$BATCH_SIZE" ] && extra+=(--set "batch_size=$BATCH_SIZE")
+  [ -n "${EPOCHS:-}" ] && extra+=(--set "epochs=$EPOCHS")
+  [ -n "${NUM_WORKERS:-}" ] && extra+=(--set "num_workers=$NUM_WORKERS")
+  [ -n "${AMP:-}" ] && extra+=(--set "amp=$AMP")
 
-  local runtime_cfg="${prep[0]}"
-  local run_dir="${prep[1]}"
-  echo "[triplet mode=$TUNING_MODE rep=$((rep_idx + 1))] seed=$seed split_seed=$split_seed"
-  "$PY" scripts/train_em_seg.py --cfg "$runtime_cfg"
-  "$PY" scripts/eval_em_seg.py  --cfg "$runtime_cfg" --out_csv "$run_dir/${rep_tag}_metrics.csv"
-  archive_slurm_log "$run_dir" "$rep_tag"
-  rm -f "$runtime_cfg"
+  make_runtime_cfg \
+    --base-cfg "$BASE_CFG" \
+    --tuning-mode "$TUNING_MODE" \
+    --seed "$seed" --split-seed "$split_seed" \
+    --task-type "${COMBO}-${TUNING_MODE}" \
+    --experiment-id "2026-09-08_deepbacs_triplet_${COMBO}_dinov3_${TUNING_MODE}_seg_${tag}" \
+    --prefix "${tag}_" \
+    --set "backbone.name=$BACKBONE_NAME" \
+    --set "backbone.variant=$DINO_SIZE" \
+    --set "dino_size=$DINO_SIZE" \
+    --set "train_img_dir=${DATA_ROOT}/train/images" \
+    --set "train_mask_dir=${DATA_ROOT}/train/masks" \
+    --set "test_img_dir=${DATA_ROOT}/test/images" \
+    --set "test_mask_dir=${DATA_ROOT}/test/masks" \
+    ${extra[@]+"${extra[@]}"}
+
+  echo "[deepbacs triplet mode=$TUNING_MODE $tag] seed=$seed split_seed=$split_seed"
+  train_and_eval "$RUNTIME_CFG" "$RUN_DIR" "$tag"
 }
 
-if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
-  task_id=${SLURM_ARRAY_TASK_ID}
-  if (( task_id < 0 || task_id >= REPEATS )); then
-    echo "[error] SLURM_ARRAY_TASK_ID=$task_id outside 0..$((REPEATS - 1))" >&2
-    exit 1
-  fi
-  run_rep "$task_id"
-else
-  echo "[info] running $REPEATS reps sequentially (TUNING_MODE=$TUNING_MODE)"
-  for ((rep=0; rep<REPEATS; rep++)); do
-    run_rep "$rep"
-  done
-fi
+dino_peft_dispatch "$REPEATS" run_rep

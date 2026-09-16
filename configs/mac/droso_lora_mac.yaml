@@ -1,7 +1,9 @@
 # Environment: Mac / local dev — Drosophila-only dataset
 
-# Run scripts/compose_droso_dataset.py first to stage droso-only/{train,test}
+# Run scripts/data/compose_em_datasets.py first to stage droso-only/{train,test}
 # folders, then point the dirs below to that output root.
+extends: defaults
+
 train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/Droso/Train_In"
 train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/Droso/Train_Out"
 test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/Droso/Test_In"
@@ -34,38 +36,17 @@ dataset:
   params:
     recursive: true
 
-
 # ---- LoRA ----
 use_lora: false
 lora_targets: [attn.qkv, attn.proj]
 lora_rank: 8
-lora_alpha: 32
 
 # ---- training ----
 batch_size: 1
 epochs: 1
-patience: 20
-lr: 0.00005
-weight_decay: 0.0001
 num_workers: 8
-device: auto
 amp: true
-val_ratio: 0.1
-split_seed: 42
 
 # ---- loss (CE + Tversky on foreground) ----
 loss: dice      # ce, dice, ce_tversky 
 class_weights: [1.0, 15.0]    # bg, fg
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
-tversky_weight: 0.6
-
-# ---- training safety ----
-clip_grad_norm: 1.0
-
-# ---- export / viz ----
-binarize: true
-binarize_threshold: 128
-
-clahe_norm: false

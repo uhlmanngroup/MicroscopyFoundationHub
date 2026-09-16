@@ -16,6 +16,7 @@ import yaml
 from dino_peft.backbones import build_backbone, resolve_backbone_cfg
 from dino_peft.models.lora import apply_peft
 from dino_peft.utils.paths import setup_run_dir
+from dino_peft.config import load_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,8 +43,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path) -> dict:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open("r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(path)
     if not cfg:
         raise ValueError(f"Config file {path} is empty or invalid.")
     return cfg

@@ -2,7 +2,7 @@
 """Compute parameter counts for backbones + segmentation head under full, head-only, and LoRA regimes.
 
 Example (local):
-    python scripts/utils/param_count_table.py --cfg configs/cluster/param_counts.yaml
+    python scripts/utils/param_count_table.py --cfg configs/cluster/EM/param_counts.yaml
 
 Example (cluster):
     sbatch slurm/param_counts.sbatch
@@ -21,6 +21,7 @@ import yaml
 from dino_peft.backbones import build_backbone
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.models.lora import apply_peft
+from dino_peft.config import load_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -63,8 +64,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open("r") as handle:
-        cfg = yaml.safe_load(handle)
+    cfg = load_config(path)
     if not cfg:
         raise ValueError(f"Config file {path} is empty or invalid.")
     return cfg

@@ -20,7 +20,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 
-BASE_CFG=${BASE_CFG:-configs/cluster/kasthuri_openclip_vitl14_head_cluster.yaml}
+BASE_CFG=${BASE_CFG:-configs/cluster/EM/kasthuri_openclip_vitl14_head_cluster.yaml}
 MODELS=${MODELS:-"ViT-L-14"}
 PRETRAINED_DEFAULT=${PRETRAINED_DEFAULT:-"laion2b_s32b_b82k"}
 PRETRAINED_VITL14=${PRETRAINED_VITL14:-"laion2b_s32b_b82k"}

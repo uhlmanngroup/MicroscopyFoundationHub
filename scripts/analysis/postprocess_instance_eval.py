@@ -30,6 +30,7 @@ from dino_peft.models.lora import apply_peft
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
 from dino_peft.utils.paths import setup_run_dir, update_metrics
 from dino_peft.utils.transforms import em_seg_transforms
+from dino_peft.config import load_config
 from dino_peft.analysis.instance_postprocess import (
     aggregate_instance_metrics,
     evaluate_instance_image,
@@ -136,10 +137,10 @@ def build_instance_dataset_from_cfg(cfg, split: str, transform):
     elif dataset_type == "droso":
         dataset_params.setdefault("recursive", True)
     if modality == "deepbacs":
-        deepbacs_crop = int(cfg.get("deepbacs_center_crop_size", 448))
-        if deepbacs_crop <= 0:
-            raise ValueError(f"deepbacs_center_crop_size must be positive, got {deepbacs_crop}")
-        dataset_params["center_crop_size"] = deepbacs_crop
+        crop_size = int(cfg.get("center_crop_size", cfg.get("deepbacs_center_crop_size", 448)))
+        if crop_size <= 0:
+            raise ValueError(f"center_crop_size must be positive, got {crop_size}")
+        dataset_params["center_crop_size"] = crop_size
     dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 
     kwargs = {
@@ -206,7 +207,7 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
-    cfg = yaml.safe_load(open(args.cfg))
+    cfg = load_config(args.cfg)
 
     task_type = cfg.get("task_type", "seg")
     if "experiment_id" in cfg and "results_root" in cfg:

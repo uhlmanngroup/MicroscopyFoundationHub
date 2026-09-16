@@ -8,7 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 
 # Example submit with explicit weights:
-# WEIGHTS_VITS16=/home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth WEIGHTS_VITB16=/home/cfuste/data/Models/DINOv3/dinov3_vitb16_pretrain_73cec8be.pth WEIGHTS_VITL16=/home/cfuste/data/Models/DINOv3/dinov3_vitl16_pretrain_eadcf0ff.pth sbatch --array=0-14 slurm/grid_paired_dinov3.sbatch
+# WEIGHTS_VITS16=/home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth WEIGHTS_VITB16=/home/cfuste/data/Models/DINOv3/dinov3_vitb16_pretrain_73cec8be.pth WEIGHTS_VITL16=/home/cfuste/data/Models/DINOv3/dinov3_vitl16_pretrain_eadcf0ff.pth sbatch --array=0-14 slurm/em/grid_paired_dinov3.sbatch
 
 
 
@@ -26,7 +26,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
-BASE_CFG="configs/cluster/paired_dinov3_cluster.yaml"
+BASE_CFG="configs/cluster/EM/paired_dinov3_cluster.yaml"
 DINO_SIZES=${DINO_SIZES:-"vits16 vitb16 vitl16"}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov3}
 EPOCHS=${EPOCHS:-}

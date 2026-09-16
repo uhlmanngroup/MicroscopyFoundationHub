@@ -5,7 +5,7 @@ Example (local):
     python scripts/run_pca.py --cfg configs/mac/em_pca_mac.yaml
 
 Example (cluster):
-    sbatch slurm/feat_analysis_paired.sbatch
+    sbatch slurm/em/feat_analysis_paired.sbatch
 """
 
 import argparse
@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from dino_peft.analysis.dimred import load_feature_npz, run_pca, run_umap
 from dino_peft.utils.plots import scatter_2d
 from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
+from dino_peft.config import load_config
 
 try:
     import plotly.graph_objects as go
@@ -52,8 +53,7 @@ def _map_display_names(values):
     return _display_name(values)
 
 def load_cfg(path: Path):
-    with open(path, "r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(path)
     if not cfg:
         raise ValueError("Empty config")
     return cfg

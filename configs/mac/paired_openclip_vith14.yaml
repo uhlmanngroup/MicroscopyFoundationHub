@@ -1,6 +1,8 @@
 # Environment: Mac / local paired Lucchi+Droso dataset
 
 # Paired dataset (Lucchi <-> Droso) already pre-composed
+extends: defaults
+
 train_img_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/images"
 train_mask_dir: "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/train/masks"
 test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/images"
@@ -33,12 +35,10 @@ dataset:
     pair_mode: "stem"
     recursive: false
 
-
 # ---- LoRA / head ----
 use_lora: false
 full_finetune: true
 lora_rank: 8
-lora_alpha: 32
 lora:
   enabled: false
   target_policy: vit_attention_only
@@ -50,27 +50,6 @@ lora:
 batch_size: 1
 epochs: 2
 patience: 5
-lr: 0.00005
-weight_decay: 0.0001
-num_workers: 4
-device: auto
-amp: false
-val_ratio: 0.1
-split_seed: 42
 
 # ---- loss (Dice) ----
-loss: dice
 class_weights: [1.0, 15.0]
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
-tversky_weight: 0.6
-
-# ---- training safety ----
-clip_grad_norm: 1.0
-
-# ---- export / viz ----
-binarize: true
-binarize_threshold: 128
-
-clahe_norm: false

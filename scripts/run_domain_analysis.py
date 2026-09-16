@@ -10,7 +10,7 @@ Example (legacy):
     python scripts/run_domain_analysis.py --cfg configs/mac/domain_analysis.yaml
 
 Example (auto pairwise):
-    python scripts/run_domain_analysis.py --cfg configs/mac/domain_analysis_triplet.yaml
+    python scripts/run_domain_analysis.py --cfg configs/mac/domain_analysis.yaml
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from dino_peft.analysis.domain_metrics import (
     lr_domain_separability,
 )
 from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
+from dino_peft.config import load_config
 
 DEFAULT_CFG = Path(__file__).parent.parent / "configs" / "mac" / "domain_analysis.yaml"
 
@@ -54,8 +55,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open("r") as handle:
-        cfg = yaml.safe_load(handle)
+    cfg = load_config(path)
     if not cfg:
         raise ValueError(f"Config file {path} is empty or invalid.")
     return cfg

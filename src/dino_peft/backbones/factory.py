@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import torch
+
 from .dinov2 import DINOv2Adapter
 from .dinov3 import DINOv3Adapter
 from .openclip_adapter import OpenCLIPAdapter

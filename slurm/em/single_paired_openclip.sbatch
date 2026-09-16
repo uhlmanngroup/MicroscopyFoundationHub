@@ -21,7 +21,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 
-BASE_CFG="configs/cluster/paired_openclip_vitl14_cluster.yaml"
+BASE_CFG="configs/cluster/EM/paired_openclip_vitl14_cluster.yaml"
 MODEL=${MODEL:-"ViT-L-14"}
 PRETRAINED=${PRETRAINED:-"laion2b_s32b_b82k"}
 WEIGHTS=${WEIGHTS:-}

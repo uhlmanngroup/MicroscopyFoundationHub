@@ -21,7 +21,7 @@ Notes:
 - `scripts/run_pca.py`: PCA/UMAP on extracted features
 
 Postprocess example:
-- `python scripts/analysis/postprocess_instance_eval.py --cfg configs/cluster/deepbacs_single_dinov2_cluster.yaml --split test --iou-threshold 0.5`
+- `python scripts/analysis/postprocess_instance_eval.py --cfg configs/cluster/deepbacs/deepbacs_single_dinov2_cluster.yaml --split test --iou-threshold 0.5`
 
 ## Features And OOD
 - `scripts/extract_features.py`: extract DINO features to NPZ

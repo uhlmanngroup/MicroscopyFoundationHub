@@ -20,7 +20,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 
-BASE_CFG="configs/cluster/lucchi_openclip_vitl14_cluster.yaml"
+BASE_CFG="configs/cluster/EM/lucchi_openclip_vitl14_cluster.yaml"
 MODELS=${MODELS:-"ViT-L-14 ViT-H-14"}
 PRETRAINED_DEFAULT=${PRETRAINED_DEFAULT:-"laion2b_s32b_b82k"}
 PRETRAINED_VITL14=${PRETRAINED_VITL14:-"laion2b_s32b_b82k"}

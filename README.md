@@ -1,216 +1,184 @@
 # Microscopy Foundation Hub
+
 [![arXiv](https://img.shields.io/badge/arXiv-2602.08505-b31b1b.svg)](https://arxiv.org/abs/2602.08505)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 
-A foundation‑model hub for microscopy: training, fine‑tuning, and evaluation across modalities.
-More details to follow.
+Benchmark of vision foundation models for microscopy segmentation. Three pretrained
+backbones, one lightweight convolutional decoder, three adaptation regimes — evaluated
+across electron microscopy, light microscopy, and histopathology.
 
-**Quickstart**
-1. Create an environment and install the package (local).
+![EM segmentation — foreground IoU comparison](docs/media/fancyplot.png)
+
+> **Built for SLURM.** All experiments ran on the UZH ScienceCluster (H100 GPUs), and every
+> sweep in `slurm/` is a job array. The Python entrypoints run locally too, but the
+> reproducible path is `sbatch`.
+
+## Backbones
+
+| Backbone | Variants | Patch | Pretraining | Weights |
+|---|---|---|---|---|
+| **DINOv2** | ViT-S/B/**L**/g | 14 | LVD-142M, self-supervised | Public (`torch.hub`) |
+| **DINOv3** | ViT-S/B/**L**/16 | 16 | LVD-1689M, self-supervised | Gated — requires approved access |
+| **OpenCLIP** | ViT-**L**-14, ViT-H-14 | 14 | LAION-2B, image–text | Public (`open-clip-torch`) |
+
+Main results use the Large variants. Backbone choice is config-driven — see
+`configs/backbones/` for one example block per family.
+
+## Adaptation regimes
+
+All three regimes train the same decoder (1×1 stem → four transposed-conv upsampling blocks
+→ 1×1 logits → bilinear resize to input resolution). They differ only in the backbone.
+
+| Regime | Backbone | Trained | Config keys |
+|---|---|---|---|
+| **Frozen + seg. head** | Frozen | Decoder only | `use_lora: false`, `full_finetune: false` |
+| **LoRA** | Frozen + low-rank adapters | Decoder + adapters | `use_lora: true` |
+| **End-to-end** | Fully trainable | Everything | `use_lora: false`, `full_finetune: true` |
+
+LoRA targets ViT attention projections only (`target_policy: vit_attention_only`). Rank and
+α are not uniform across the benchmark: the EM runs and every OpenCLIP run use rank 16 / α 32,
+while the DeepBacs and MoNuSAC DINOv2 and DINOv3 runs use rank 8 / α 16. Each config states
+its own values explicitly.
+
+## Datasets
+
+| Domain | Datasets | Target |
+|---|---|---|
+| Electron microscopy | Lucchi++, Kasthuri++, Drosophila VNC | Mitochondria |
+| Light microscopy — DeepBacs | *E. coli*, *S. aureus*, *B. subtilis* | Bacterial cells |
+| Histopathology — MoNuSAC | Epithelial, Lymphocyte | Nuclei |
+
+EM and DeepBacs are also trained on multi-dataset composites: **paired** (two sources) and
+**triplet** (all three), built with `scripts/data/compose_{em,deepbacs}_datasets.py`. A small
+Open Images subset serves as the natural-image reference in the domain-shift analysis.
+
+EM images are resized on the longest edge to a multiple of the backbone patch size; DeepBacs
+and MoNuSAC keep native resolution with a paired 448×448 center crop. MoNuSAC patches vary
+too widely in size for that alone, so `scripts/data/prepare_monusac_448.py` first drops
+patches under 200 px and resizes those below 448 px.
+
+## Installation
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+conda env create -f configs/environments/cluster-conda.yml   # or mac-conda.yml
+conda activate dino-peft
 pip install -e .
 ```
 
-2. Pick a config and train.
+The environment and the importable package are both named `dino_peft`, which predates
+the project's current scope; `import dino_peft` is correct in this repository.
 
-```bash
-python scripts/train_em_seg.py --cfg configs/mac/lucchi_dinov2_lora_mac.yaml
-```
-
-3. (Optional) evaluate and summarize.
-
-```bash
-python scripts/eval_em_seg.py --cfg configs/mac/lucchi_dinov2_lora_mac.yaml
-python scripts/analysis/summarize_seg_results.py --root /path/to/results/seg
-```
-
-**Configs And Paths**
-- All parameters live in YAML under `configs/`. CLI flags and sbatch env vars only override config values.
-- Many configs contain absolute paths from the author's machines (for example `/Users/cfuste/...` or `/home/cfuste/...`). Keep them if you use the same layout, otherwise update them for your environment.
-- See `configs/README.md` for the full configuration map and environment YAMLs.
-- Use `modality: em` (default) or `modality: deepbacs` to separate experiment outputs and preprocessing policy.
-
-**Common Workflows**
-- Train: `python scripts/train_em_seg.py --cfg configs/mac/...yaml`
-- Eval: `python scripts/eval_em_seg.py --cfg configs/mac/...yaml`
-- Summaries: `python scripts/analysis/summarize_seg_results.py --root /path/to/results/seg`
-- Summary plots: `python scripts/analysis/plot_seg_summary.py --summary-dir /path/to/results/seg/summary`
-- Optional instance postprocess (from semantic checkpoint): `python scripts/analysis/postprocess_instance_eval.py --cfg configs/cluster/deepbacs_single_dinov2_cluster.yaml`
-- Feature extraction: `python scripts/extract_features.py --cfg configs/mac/em_unsupervised_features_mac.yaml`
-- PCA/UMAP: `python scripts/run_pca.py --cfg configs/mac/em_pca_mac.yaml`
-- OOD detection: `python scripts/ood_detection.py --cfg configs/mac/ood_detection_mac.yaml`
-- Domain analysis: `python scripts/run_domain_analysis.py --cfg configs/mac/domain_analysis.yaml`
-- Backbone inspection: `python scripts/inspect_backbone.py --cfg configs/mac/paired_openclip_vitl14.yaml`
-
-For a full list of entrypoints and their purpose, see `scripts/README.md`.
-
-**Cluster (SLURM)**
-- Train + eval (single run): `sbatch slurm/single_lucchi_dinov2.sbatch configs/cluster/lucchi_dinov2_cluster.yaml`
-- DeepBacs example config (cluster): `configs/cluster/deepbacs_single_dinov2_cluster.yaml`
-- Feature grids: `sbatch slurm/feat_analysis_paired.sbatch`
-- Summaries: `sbatch slurm/summarize_seg_results.sbatch`
-- Param counts: `sbatch slurm/param_counts.sbatch`
-- Full fine-tuning (paired): `sbatch slurm/single_paired_fullft.sbatch`
-
-**Backbone Selection**
-- Backbone choice is config-driven via a `backbone` block. See `configs/backbones/` for examples.
-- Legacy configs that only specify `dino_size` still work and default to DINOv2.
-
-**Fine-Tuning Mode**
-- LoRA: set `use_lora: true` (default in many configs).
-- Full fine-tuning: set `use_lora: false` and `full_finetune: true`.
-- Head-only (frozen backbone): set `use_lora: false` and omit `full_finetune`.
-- Train-time augmentation: set `data_augmentation: true` to enable train-only online `flip -> random shift`; tune `data_augmentation_prob` (default `0.5`).
-- CLAHE preprocessing: set `clahe_norm: true` to apply subtle CLAHE on all splits (train/val/test) before ImageNet normalization.
-
-**Modality Notes**
-- `modality: em`: existing EM behavior/configs.
-- `modality: deepbacs`: pipeline enforces `img_size.mode: native` and a paired center crop of `448x448` (image + mask) for train/val/test. This avoids resizing artifacts and keeps inputs compatible with patch sizes 14 and 16.
-- Expected DeepBacs layout on the cluster is now explicit: `single/<dataset>/...`, `paired/<combo>/...`, and `triple/coli-aureus-subtilis/...`.
-
-**DINOv3 Weights**
-
-Access to DINOv3 weights requires an approved request. Once you receive the link, download the checkpoint and set `backbone.weights` and `backbone.repo_dir` in your config. The paths below are placeholders:
-
-```bash
-wget -O /path/to/dinov3_vits16_pretrain.pth "<DINOv3_CHECKPOINT_URL>"
-```
+DINOv2 and OpenCLIP weights download on first use; set `backbone.weights` to a local
+checkpoint on offline clusters. **DINOv3 requires approved access** — once granted, clone
+[facebookresearch/dinov3](https://github.com/facebookresearch/dinov3), download the
+checkpoint, and point your config at both:
 
 ```yaml
 backbone:
   name: dinov3
-  variant: vits16
-  repo_dir: /path/to/facebookresearch/dinov3
-  weights: /path/to/dinov3_vits16_pretrain.pth
+  variant: vitl16
+  repo_dir: /path/to/dinov3
+  weights: /path/to/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+img_size:
+  patch_multiple: 16   # 16 for DINOv3, 14 for DINOv2 and OpenCLIP
 ```
 
-Also update `img_size.patch_multiple` to 16 when using DINOv3 so resizing snaps to the correct stride.
+## Running experiments
 
-**OpenCLIP Weights And Caching**
+`slurm/` is organised by domain (`em/`, `deepbacs/`, `monusac/`, `domain_shift/`) and holds
+two kinds of file:
 
-Use `backbone.pretrained` to point to an OpenCLIP tag (auto-downloads if cached access is available) or set `backbone.weights` to a local checkpoint path for offline clusters. Cache locations can be steered via `HF_HOME` or `XDG_CACHE_HOME`.
+- **`submit_*.sh`** — submits a full sweep (every dataset × regime × seed) as job arrays.
+  This is the intended entrypoint.
+- **`grid_*.sbatch`** — the job itself. Each array task writes a temporary YAML from a base
+  config with the requested overrides, runs `train_em_seg.py` then `eval_em_seg.py`, and
+  archives its SLURM log into the run directory. The shared machinery lives in
+  `slurm/lib/common.sh` and `scripts/utils/make_runtime_cfg.py`, so a sweep script only
+  describes what is specific to it.
 
-**Results Layout**
+Sweeps are driven by exported environment variables; `--array=0-4` runs the five seeds that
+every reported number averages over.
 
-All runs share a common results layout driven by the YAML config. Each config must define:
+```bash
+bash slurm/deepbacs/submit_dinov3_single.sh   # 3 species × 3 regimes × 5 seeds
+bash slurm/monusac/submit_dinov3_single.sh    # 2 cell types × 3 regimes × 5 seeds
 
-- `experiment_id`: unique run name (e.g. `2025-11-20_A1_lucchi+droso_dinov2-base_lora-none_seg`)
-- `results_root`: root directory for all outputs
-- `task_type`: `seg`, `feats`, `ood-detection`, etc.
-
-Outputs land at:
-
+# one cell of the grid
+sbatch --array=0-4 --export=ALL,DATASET=subtilis,TUNING_MODE=lora \
+  slurm/deepbacs/grid_dinov3_large.sbatch
 ```
-<results_root>/<modality>/<task_type>/<experiment_id>/
-  config_used.yaml
-  run_info.txt
-  metrics.json
-  ckpts/
-  figs/
+
+Common variables: `DATASET` / `COMBO`, `TUNING_MODE` (`head` | `lora` | `fullft`), `REPEATS`,
+`BASE_SEED`, `BASE_SPLIT_SEED`, `BASE_CFG`.
+
+**Before your first submission,** edit the cluster-specific paths at the top of each
+`grid_*.sbatch` — `PY`, `DATA_ROOT`, `RESULTS_ROOT`, and the DINOv3 `WEIGHTS` location. The
+configs under `configs/cluster/` likewise carry absolute paths from the original machines.
+
+To run a single job locally, for debugging:
+
+```bash
+python scripts/train_em_seg.py --cfg configs/cluster/EM/lucchi_dinov3_lora_cluster.yaml
+python scripts/eval_em_seg.py  --cfg configs/cluster/EM/lucchi_dinov3_lora_cluster.yaml
 ```
 
-`metrics.json` is updated by training/eval/analysis scripts via `update_metrics()`.
+## Configuration and outputs
 
-**Repository Structure**
+Every parameter lives in YAML under `configs/`; CLI flags and sbatch variables only override
+config values. A config states what makes it different and inherits the rest via
+`extends: defaults`, and refers to machine paths as `${data_root}`, `${scratch_root}` and so
+on, which resolve from `configs/paths.yaml`. **To run on another machine, edit that one file**
+— or override any entry from the environment:
 
+```bash
+export DINO_PEFT_DATA_ROOT=/my/datasets
+export DINO_PEFT_SCRATCH_ROOT=/my/results
 ```
-shift-peft/
-  configs/
-    README.md
-    backbones/           # Backbone config examples
-    cluster/             # Cluster configs
-    environments/        # Minimal conda env YAMLs
-    mac/                 # Local configs
-  docs/
-    media/               # README assets
-  scripts/
-    README.md
-    analysis/            # summarize/plot/fancy/OOD comparison
-    data/                # dataset composition utilities
-    utils/               # log helpers + param counts
-    train_em_seg.py
-    eval_em_seg.py
-    extract_features.py
-    run_pca.py
-    run_domain_analysis.py
-    ood_detection.py
-    smoke_test.py
-    smoke_test_lora.py
-    inspect_backbone.py
-    ablation_paired_balance_dinov2.py
-  slurm/                 # sbatch entrypoints
-  src/                   # core library code
-  README.md
-  pyproject.toml
-```
+
+Training uses AdamW and Dice loss with a 10% validation split and early stopping (patience 20,
+max 1000 epochs). Each run writes `<results_root>/<modality>/<task_type>/<experiment_id>/`
+containing `config_used.yaml`, `run_info.txt`, `metrics.json`, `ckpts/`, `figs/`, and `logs/`.
+`metrics.json` holds mean and foreground IoU/Dice, plus per-source metrics for composite runs.
+
+The repository also covers feature extraction, PCA/UMAP, Mahalanobis OOD detection,
+Fréchet-distance domain analysis, and result aggregation — see
+[`scripts/README.md`](scripts/README.md) for all entrypoints and
+[`configs/README.md`](configs/README.md) for the configuration map.
+
+## Citation
+
+If you use this work, please cite the preprint
+[arXiv:2602.08505](https://arxiv.org/abs/2602.08505); the BibTeX entry is on the arXiv page.
 
 **Datasets**
 
-Lucchi, A., Smith, K., Achanta, R., Knott, G., & Fua, P. (2011). Supervoxel-based segmentation of mitochondria in em image stacks with learned shape features. IEEE transactions on medical imaging, 31(2), 474-486. Download [here](https://casser.io/connectomics).
+- **Lucchi++ / Kasthuri++** — Casser, Kang, Pfister & Haehn (2020), *Fast mitochondria
+  detection for connectomics*, MIDL. Refines Lucchi et al. (2012) and Kasthuri et al. (2015).
+  [Download](https://casser.io/connectomics)
+- **Drosophila VNC** — Gerhard, Funke, Martel, Cardona & Fetter (2013), *Segmented anisotropic
+  ssTEM dataset of neural tissue*.
+  [Download](https://github.com/unidesigner/groundtruth-drosophila-vnc)
+- **DeepBacs** — Spahn, Gómez-de-Mariscal, Laine et al. (2022), *DeepBacs for multi-task
+  bacterial image analysis using open-source deep learning approaches*, Communications Biology.
+- **MoNuSAC** — Verma, Kumar, Patil et al. (2021), *MoNuSAC2020: A multi-organ nuclei
+  segmentation and classification challenge*, IEEE TMI.
 
-Casser, V., Kang, K., Pfister, H., & Haehn, D. (2020, September). Fast mitochondria detection for connectomics. In Medical Imaging with Deep Learning (pp. 111-120). PMLR. Download [here](https://github.com/unidesigner/groundtruth-drosophila-vnc/tree/master).
+## Acknowledgements
 
-For usability purposes, the two datasets are composed into:
-```bash
-<BASE>/composed-dinopeft/
-  train/images, train/masks
-  test/images,  test/masks
-  mapping.csv
-```
+- **[DINOv2](https://github.com/facebookresearch/dinov2)** (Meta AI) — the backbones and
+  pretraining weights we adapt to microscopy via PEFT.
+- **[FD-DINOv2](https://github.com/justin4ai/FD-DINOv2)** — basis of our Fréchet-distance
+  measurement of domain shift between DINOv2 feature distributions.
+- **Stein et al.** (NeurIPS 2023), *Exposing flaws of generative model evaluation metrics and
+  their unfair treatment of diffusion models* — motivates replacing Inception features with
+  self-supervised embeddings in Fréchet-based scores.
+- **DINOSim**, *Zero-shot object detection and semantic segmentation on electron microscopy
+  images* — its characterisation of the microscopy domain gap motivates our evaluation focus.
 
-To build the EM composed layout, edit paths in `scripts/data/compose_em_datasets.py` and run:
-```bash
-python scripts/data/compose_em_datasets.py
-```
+Please respect the licenses of upstream repositories (DINOv2, DINOv3, OpenCLIP) and of any
+dataset you use; their terms apply to weights, code, and data used within this project.
 
----
-**NOTE (MoNuSAC preprocessing — to clean up before final release)**
+## License
 
-MoNuSAC patches come from WSI crops and have highly variable sizes (min dim ranges from 33px to 1760px; median ~420px). A center crop of 448×448 fails on ~54% of patches. Key size stats:
-
-- 3 patches with min dim < 50px (33, 35, 37px) — all in test set, boundary crops from same patient
-- 9 patches with min dim 50–100px (mostly test)
-- ~125 patches with min dim 100–400px
-- ~54% of all patches (train+test) have at least one dimension < 448px
-
-**Decided preprocessing strategy for MoNuSAC:**
-- Drop patches with min dimension < 200px (removes ~37 patches, ~13% of dataset)
-- For remaining patches with min dim in [200, 448): resize to 448×448
-- For patches with min dim ≥ 448: center crop to 448×448
-
-This avoids extreme scale inconsistency from resizing tiny patches (a 33px patch resized to 448 would be ~13× upscaled, making objects appear at completely different scale than large patches cropped down).
-
-The two target datasets are **Epithelial** and **Lymphocyte** (same-image/different-mask contrast for salient vs. non-salient cell types). All four cell types share identical underlying patches.
-
-TODO: implement this filtering + mixed resize/crop logic before running final MoNuSAC experiments.
-
----
-
-**Cite**
-
-If you use this work, cite the arXiv preprint [arXiv:2602.08505](https://arxiv.org/abs/2602.08505). The BibTeX entry is available on the arXiv page.
-
-**Acknowledgements**
-
-This project stands on the shoulders of excellent open-source work and research. We’re grateful to the authors and maintainers of the following projects and papers:
-
-- **DINOv2 (Meta AI / Facebook Research)**
-  We use DINOv2 Vision Transformers and public pretraining weights (loaded via `torch.hub`) as our frozen backbone. DINOv2 provides strong, general-purpose visual representations that we adapt to electron microscopy via parameter-efficient fine-tuning (PEFT).
-  Repo: [facebookresearch/dinov2](https://github.com/facebookresearch/dinov2)
-
-- **FD-DINOv2 (Fréchet Distance with DINOv2 backbone)**
-  We adapt the idea of replacing Inception features in FID with DINOv2 features, as implemented in the FD-DINOv2 repository. In our case, we compute a FID-style Fréchet distance between Gaussian approximations of the DINOv2 feature distributions of two EM datasets (with and without LoRA) to quantify domain shift.
-  Repo: [justin4ai/FD-DINOv2](https://github.com/justin4ai/FD-DINOv2)
-
-- **Exposing Flaws of Generative Model Evaluation Metrics**
-  Stein et al. systematically study generative model evaluation metrics and show that relying on Inception-V3 can unfairly penalize diffusion models. They propose using self-supervised encoders such as DINOv2-ViT-L/14 as richer feature extractors for Fréchet-based scores, which motivates our choice to replace Inception with DINOv2 embeddings when measuring domain distances.
-  Paper: *Exposing flaws of generative model evaluation metrics and their unfair treatment of diffusion models*, NeurIPS 2023.
-
-- **DINOSim (Electron Microscopy zero-shot evaluation)**
-  DINOSim motivates our evaluation focus: it investigates zero-shot detection/segmentation on EM imagery using DINO features and highlights the domain gap for microscopy. We build on that insight by demonstrating how PEFT (LoRA) improves downstream EM segmentation compared to zero-shot.
-  Project/Paper: *DINOSim: Zero-Shot Object Detection and Semantic Segmentation on Electron Microscopy Images.*
-
-**Licensing note:**
-Please review and respect the licenses of upstream repositories (e.g. DINOv2) and any datasets you use. Their terms apply to model weights, code, and data redistributed or fine-tuned within this project.
+MIT — see [LICENSE](LICENSE).

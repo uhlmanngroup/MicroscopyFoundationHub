@@ -21,7 +21,7 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-6}"
 
-BASE_CFG="configs/cluster/paired_dinov3_cluster.yaml"
+BASE_CFG="configs/cluster/EM/paired_dinov3_cluster.yaml"
 DINO_SIZE=${DINO_SIZE:-vitl16}
 BACKBONE_NAME=${BACKBONE_NAME:-dinov3}
 BACKBONE_VARIANT=${BACKBONE_VARIANT:-$DINO_SIZE}

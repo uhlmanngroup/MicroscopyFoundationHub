@@ -1,20 +1,22 @@
 # Environment: cluster (UZH Science) - Lucchi++ segmentation run
 
+extends: defaults
+
 # ---- I/O ----
 # DINO-POC (optional):
-# train_img_dir: /home/cfuste/data/datasets/EM/DINO-POC/train/images
-# train_mask_dir: /home/cfuste/data/datasets/EM/DINO-POC/train/masks
-# test_img_dir:    /home/cfuste/data/datasets/EM/DINO-POC/test/images
-# test_mask_dir:   /home/cfuste/data/datasets/EM/DINO-POC/test/masks
+# train_img_dir: ${data_root}/EM/DINO-POC/train/images
+# train_mask_dir: ${data_root}/EM/DINO-POC/train/masks
+# test_img_dir:    ${data_root}/EM/DINO-POC/test/images
+# test_mask_dir:   ${data_root}/EM/DINO-POC/test/masks
 # Lucchi++:
-train_img_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
-train_mask_dir: "/home/cfuste/data/datasets/EM/Lucchi++/Train_Out"
-test_img_dir:    "/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
-test_mask_dir:   "/home/cfuste/data/datasets/EM/Lucchi++/Test_Out"
+train_img_dir: "${data_root}/EM/Lucchi++/Train_In"
+train_mask_dir: "${data_root}/EM/Lucchi++/Train_Out"
+test_img_dir:    "${data_root}/EM/Lucchi++/Test_In"
+test_mask_dir:   "${data_root}/EM/Lucchi++/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2026-01-19_dinov2-ablationstudy-base_seg"
-results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+results_root: "${results_root}/dinov2"
 task_type: "ablationstudy"
 
 # dataset pairing (Lucchi images are named maskXXXX vs masks as digits)
@@ -42,38 +44,19 @@ img_size:
   rounding: floor
 num_classes: 2
 
-
 # ---- LoRA ----
 use_lora: true
 lora_targets: [attn.qkv, attn.proj]
-lora_rank: 16
-lora_alpha: 32
 
 # ---- training ----
 batch_size: 1          # tightened for low-memory smoke tests on standard GPUs
-epochs: 1000
-patience: 20
-lr: 0.00005
-weight_decay: 0.0001
 num_workers: 0
-device: auto
 amp: false            # first run: stability check without AMP
-val_ratio: 0.1
-split_seed: 42
 
 # ---- loss (CE + Tversky on foreground) ----
 loss: dice      # ce, dice, ce_tversky 
 class_weights: [1.0, 15.0]    # bg, fg
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
 tversky_weight: 0.6   # lambda: 0.6*Tversky + 0.4*CE
 
 # ---- training safety ----
 clip_grad_norm: 1.0   # global grad clip
-
-# ---- export / viz (kept; argmax is used for CE path) ----
-binarize: true
-binarize_threshold: 128
-
-clahe_norm: false

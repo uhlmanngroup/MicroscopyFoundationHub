@@ -3,12 +3,12 @@
 
 Example (local):
     python scripts/ablation_paired_balance_dinov2.py \
-      --cfg configs/cluster/paired_dinov2_paired_balance.yaml \
+      --cfg configs/cluster/EM/paired_dinov2_paired_balance.yaml \
       --seed 0 \
       --variant both
 
 Example (cluster):
-    sbatch slurm/ablation_paired_balance_dinov2.sbatch
+    sbatch slurm/em/ablation_paired_balance_dinov2.sbatch
 """
 import argparse
 import csv
@@ -29,6 +29,7 @@ from dino_peft.trainers.seg_trainer import SegTrainer
 from dino_peft.utils.paths import resolve_run_dir, update_metrics
 from dino_peft.utils.transforms import em_seg_transforms
 from dino_peft.backbones import build_backbone, resolve_backbone_cfg, patch_tokens_to_grid
+from dino_peft.config import load_config
 
 
 class BalancedPairBatchSampler:
@@ -56,8 +57,7 @@ class BalancedPairBatchSampler:
 
 
 def _load_cfg(path: Path):
-    with path.open("r") as f:
-        return yaml.safe_load(f)
+    return load_config(path)
 
 
 def _get_paired_params(cfg: dict):
@@ -332,7 +332,7 @@ def _run_variant(variant, seed, base_cfg, out_root: Path | None, epochs_override
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cfg", type=str, default="configs/cluster/paired_dinov2_paired_balance.yaml")
+    ap.add_argument("--cfg", type=str, default="configs/cluster/EM/paired_dinov2_paired_balance.yaml")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--variant", type=str, choices=["unbalanced", "balanced", "both"], default="both")
     ap.add_argument("--out_dir", type=str, default="")

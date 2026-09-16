@@ -1,0 +1,51 @@
+# Values shared by every experiment. A config only needs to state what makes
+# it different; anything set in the config itself always wins over this file.
+#
+# Loaded automatically by dino_peft.config.load_config(), so there is nothing
+# to reference from an individual config.
+#
+# Note: 'seed' is deliberately NOT given a default. A config without one falls
+# back to seed=0 with a loud warning, because silently seeding every repeat
+# identically once produced a set of "repeats" with zero variance.
+
+# ---- task ----
+modality: em
+num_classes: 2
+
+# ---- optimisation ----
+lr: 0.00005
+weight_decay: 0.0001
+epochs: 1000
+patience: 20
+loss: dice
+clip_grad_norm: 1.0
+
+# ---- data split ----
+val_ratio: 0.1
+split_seed: 42
+
+# ---- runtime ----
+batch_size: 2
+num_workers: 4
+device: auto
+amp: false
+
+# ---- preprocessing / augmentation ----
+data_augmentation: false
+data_augmentation_prob: 0.5
+clahe_norm: false
+center_crop_size: 448   # paired image/mask crop for deepbacs and monusac
+
+# ---- LoRA (only used when use_lora: true) ----
+lora_rank: 16
+lora_alpha: 32
+
+# ---- Tversky terms (only used when loss includes tversky) ----
+tversky_alpha: 0.7
+tversky_beta: 0.3
+tversky_eps: 1.0e-6
+tversky_weight: 0.6
+
+# ---- export ----
+binarize: true
+binarize_threshold: 128

@@ -1,15 +1,17 @@
 # Environment: cluster (UZH Science) - composed DINO-POC dataset
 # OpenCLIP ViT-L-14 config.
 
+extends: defaults
+
 # ---- I/O ----
-train_img_dir: "/home/cfuste/data/datasets/EM/TRIPLET/train/images"
-train_mask_dir: "/home/cfuste/data/datasets/EM/TRIPLET/train/masks"
-test_img_dir:    "/home/cfuste/data/datasets/EM/TRIPLET/test/images"
-test_mask_dir:   "/home/cfuste/data/datasets/EM/TRIPLET/test/masks"
+train_img_dir: "${data_root}/EM/TRIPLET/train/images"
+train_mask_dir: "${data_root}/EM/TRIPLET/train/masks"
+test_img_dir:    "${data_root}/EM/TRIPLET/test/images"
+test_mask_dir:   "${data_root}/EM/TRIPLET/test/masks"
 
 # results + experiment naming
 experiment_id: "2026-02-26_openclip_vitl14_triplet_fullft"
-results_root: "/home/cfuste/data/DINO-LoRA/openclip/seg"
+results_root: "${results_root}/openclip/seg"
 task_type: "triplet-fullft"
 
 # stitched dataset already shares a naming scheme between images/masks
@@ -35,11 +37,8 @@ img_size:
   rounding: floor
 num_classes: 2
 
-
 # ---- LoRA ----
 use_lora: false
-lora_rank: 16
-lora_alpha: 32
 lora:
   enabled: false
   target_policy: vit_attention_only
@@ -49,33 +48,5 @@ lora:
 
 full_finetune: true
 
-# ---- training ----
-batch_size: 2
-epochs: 1000
-patience: 20
-lr: 0.00005
-weight_decay: 0.0001
-num_workers: 4
-device: auto
-amp: false
-val_ratio: 0.1
-split_seed: 42
-
 # ---- loss (Dice) ----
-loss: dice
 class_weights: [1.0, 15.0]
-tversky_alpha: 0.7
-tversky_beta: 0.3
-tversky_eps: 1.0e-6
-tversky_weight: 0.6
-
-# ---- training safety ----
-clip_grad_norm: 1.0
-
-# ---- export / viz ----
-binarize: true
-binarize_threshold: 128
-
-clahe_norm: false
-
-data_augmentation: false

@@ -28,6 +28,7 @@ from dino_peft.utils.sample_groups import (
     infer_sample_grouping,
     select_balanced_preview_indices,
 )
+from dino_peft.config import load_config
 
 def _filter_dataset_params(dataset_class, dataset_params: dict, dataset_type: str) -> dict:
     sig = inspect.signature(dataset_class.__init__)
@@ -99,8 +100,7 @@ def build_criterion(cfg, device):
 class SegTrainer:
     def __init__(self, cfg_path: str):
         # -------- config ----------
-        with open(cfg_path, "r") as f:
-            self.cfg = yaml.safe_load(f)
+        self.cfg = load_config(cfg_path)
 
         self.data_augmentation = bool(self.cfg.get("data_augmentation", False))
         self.cfg["data_augmentation"] = self.data_augmentation
@@ -123,12 +123,14 @@ class SegTrainer:
 
         self.modality = str(self.cfg.get("modality", "em")).strip().lower() or "em"
         self.cfg["modality"] = self.modality
-        self.deepbacs_center_crop_size = int(self.cfg.get("deepbacs_center_crop_size", 448))
-        if self.deepbacs_center_crop_size <= 0:
+        self.center_crop_size = int(
+            self.cfg.get("center_crop_size", self.cfg.get("deepbacs_center_crop_size", 448))
+        )
+        if self.center_crop_size <= 0:
             raise ValueError(
-                f"deepbacs_center_crop_size must be positive, got {self.deepbacs_center_crop_size}"
+                f"center_crop_size must be positive, got {self.center_crop_size}"
             )
-        self.cfg["deepbacs_center_crop_size"] = self.deepbacs_center_crop_size
+        self.cfg["center_crop_size"] = self.center_crop_size
 
         if self.modality in ("deepbacs", "monusac"):
             requested_img_size = self.cfg.get("img_size")
@@ -187,7 +189,7 @@ class SegTrainer:
                 "data_augmentation_prob": self.data_augmentation_prob,
                 "augmentation_policy": self.aug_policy,
                 "clahe_norm": self.clahe_norm,
-                "deepbacs_center_crop_size": self.deepbacs_center_crop_size,
+                "center_crop_size": self.center_crop_size,
             },
         )
 
@@ -213,7 +215,7 @@ class SegTrainer:
         elif dataset_type == "droso":
             dataset_params.setdefault("recursive", True)
         if self.modality in ("deepbacs", "monusac"):
-            dataset_params["center_crop_size"] = self.deepbacs_center_crop_size
+            dataset_params["center_crop_size"] = self.center_crop_size
         dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 
         def _build_dataset(img_dir, mask_dir, transform):
@@ -597,6 +599,6 @@ class SegTrainer:
                 "augmented_images_last_epoch": int(augmented_images_last_epoch),
                 "augmented_images_total": int(augmented_images_total),
                 "clahe_norm": self.clahe_norm,
-                "deepbacs_center_crop_size": int(self.deepbacs_center_crop_size),
+                "center_crop_size": int(self.center_crop_size),
             },
         )

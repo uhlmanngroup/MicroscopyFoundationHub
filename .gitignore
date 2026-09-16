@@ -38,6 +38,11 @@ wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
+
+# The Python build rules above ignore any 'lib/' directory. Keep the shared
+# sbatch helpers, which are source, not build output.
+!slurm/lib/
+!slurm/lib/**
 *.egg
 MANIFEST
 

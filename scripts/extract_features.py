@@ -4,7 +4,7 @@ Example (local):
     python scripts/extract_features.py --cfg configs/mac/em_unsupervised_features_mac.yaml
 
 Example (cluster):
-    sbatch slurm/feat_analysis_paired.sbatch
+    sbatch slurm/em/feat_analysis_paired.sbatch
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from dino_peft.backbones import resolve_backbone_cfg
 from dino_peft.utils.paths import setup_run_dir, update_metrics, write_run_info
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
 from copy import deepcopy
+from dino_peft.config import load_config
 
 DEFAULT_CFG_PATH = (
     Path(__file__).parent.parent / "configs" / "mac" / "em_unsupervised_features_mac.yaml"
@@ -50,8 +51,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(cfg_path: Path) -> dict:
     if not cfg_path.is_file():
         raise FileNotFoundError(f"Config file not found: {cfg_path}")
-    with cfg_path.open("r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(cfg_path)
     if not cfg:
         raise ValueError(f"Config file {cfg_path} is empty or invalid.")
     return cfg

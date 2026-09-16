@@ -1,5 +1,5 @@
 # Cluster config for Mahalanobis OOD detection (Lucchi ID vs Droso target).
-# Submit via: python scripts/ood_detection.py --cfg configs/cluster/ood_detection_cluster.yaml
+# Submit via: python scripts/ood_detection.py --cfg configs/cluster/EM/ood_detection_cluster.yaml
 
 experiment_id: "2025-02-10_B1_lucchi-vs-droso_dinov2-base_lora-r16_ood"
 results_root: "/home/cfuste/data/DINO-LoRA"

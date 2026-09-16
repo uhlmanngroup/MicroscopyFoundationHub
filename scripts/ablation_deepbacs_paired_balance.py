@@ -17,6 +17,7 @@ import yaml
 from torch.utils.data import DataLoader
 
 from dino_peft.trainers.seg_trainer import SegTrainer
+from dino_peft.config import load_config
 
 SOURCE_ALIASES = {
     "aureus": ("aureus", "jenilered"),
@@ -56,8 +57,7 @@ class BalancedPairBatchSampler:
 
 
 def _load_cfg(path: Path):
-    with path.open("r") as f:
-        return yaml.safe_load(f)
+    return load_config(path)
 
 
 def _normalize_patterns(value):

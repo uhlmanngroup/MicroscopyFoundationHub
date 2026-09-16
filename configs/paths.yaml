@@ -1,0 +1,25 @@
+# Machine-specific paths — the only file you need to edit to run elsewhere.
+#
+# Configs refer to these as ${data_root}, ${scratch_root}, ... instead of
+# hardcoding absolute paths. Every entry can also be overridden from the
+# environment without editing this file, using DINO_PEFT_<KEY> in upper case:
+#
+#   export DINO_PEFT_DATA_ROOT=/Users/me/Documents/Data
+#   export DINO_PEFT_SCRATCH_ROOT=/Users/me/Documents/Results
+#
+# which is how the same config runs on the cluster and on a laptop.
+
+# Datasets. Expected to contain EM/, deepbacs/, monusac_448/, domain_shift/.
+data_root: /home/cfuste/data/datasets
+
+# Run outputs on persistent cluster storage (/data survives, but is slower).
+results_root: /home/cfuste/data/DINO-LoRA
+
+# Run outputs on scratch — where recent experiments write.
+scratch_root: /home/cfuste/scratch/DINO-LoRA
+
+# Downloaded backbone checkpoints (DINOv3 .pth files).
+models_root: /home/cfuste/scratch/data/models
+
+# Local clone of facebookresearch/dinov3, needed for torch.hub loading.
+dinov3_repo: /home/cfuste/GitHub/dinov3

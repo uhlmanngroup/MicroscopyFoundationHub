@@ -5,7 +5,7 @@ This wrapper reuses the existing scripts and injects the derived `features.npz` 
 into the PCA and domain-analysis stages so you only maintain one config file.
 
 Typical usage:
-    python scripts/run_feature_domain_pipeline.py --cfg configs/cluster/paired_feat_analysis_cluster.yaml
+    python scripts/run_feature_domain_pipeline.py --cfg configs/cluster/EM/paired_feat_analysis_cluster.yaml
 
 Notes:
   - The config should be primarily an `extract_features.py` config (data/model/runtime).
@@ -33,6 +33,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from dino_peft.utils.paths import resolve_run_dir
+from dino_peft.config import load_config
 
 DEFAULT_CFG = REPO_ROOT / "configs" / "mac" / "em_unsupervised_features_mac.yaml"
 
@@ -74,8 +75,7 @@ def parse_args() -> argparse.Namespace:
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open("r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(path)
     if not cfg:
         raise ValueError(f"Config file is empty or invalid: {path}")
     return cfg

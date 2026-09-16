@@ -5,7 +5,7 @@ Example (local):
     python scripts/eval_em_seg.py --cfg configs/mac/lucchi_dinov2_lora_mac.yaml
 
 Example (cluster):
-    sbatch slurm/single_lucchi_dinov2.sbatch configs/cluster/lucchi_dinov2_cluster.yaml
+    sbatch slurm/em/single_lucchi_dinov2.sbatch configs/cluster/EM/lucchi_dinov2_cluster.yaml
 """
 
 import argparse
@@ -37,6 +37,7 @@ from dino_peft.utils.sample_groups import (
     infer_sample_grouping,
     select_balanced_preview_indices,
 )
+from dino_peft.config import load_config
 
 def _filter_dataset_params(dataset_class, dataset_params: dict, dataset_type: str) -> dict:
     sig = inspect.signature(dataset_class.__init__)
@@ -131,8 +132,8 @@ def build_dataset_from_cfg(cfg, split: str, transform):
     elif dataset_type == "droso":
         dataset_params.setdefault("recursive", True)
     if modality in ("deepbacs", "monusac"):
-        deepbacs_crop = int(cfg.get("deepbacs_center_crop_size", 448))
-        dataset_params["center_crop_size"] = deepbacs_crop
+        crop_size = int(cfg.get("center_crop_size", cfg.get("deepbacs_center_crop_size", 448)))
+        dataset_params["center_crop_size"] = crop_size
     dataset_params = _filter_dataset_params(DatasetClass, dataset_params, dataset_type)
 
     kwargs = {
@@ -393,7 +394,7 @@ def _build_dataset(cfg, split: str, transform):
     params = dataset_cfg.get("params") or {}
     if modality in ("deepbacs", "monusac"):
         params = dict(params)
-        params["center_crop_size"] = int(cfg.get("deepbacs_center_crop_size", 448))
+        params["center_crop_size"] = int(cfg.get("center_crop_size", cfg.get("deepbacs_center_crop_size", 448)))
     common = dict(
         image_dir=cfg[img_key],
         mask_dir=cfg[mask_key],
@@ -454,7 +455,7 @@ def main():
     ap.add_argument("--out_csv", default="", help="Optional metrics output; if empty, write run_dir/metrics_test.csv")
     args = ap.parse_args()
 
-    cfg = yaml.safe_load(open(args.cfg))
+    cfg = load_config(args.cfg)
     task_type = cfg.get("task_type", "seg")
     if "experiment_id" in cfg and "results_root" in cfg:
         run_dir = setup_run_dir(
@@ -484,10 +485,12 @@ def main():
     ckpt_cfg = ckpt.get("cfg", {}) or {}
     eval_cfg = ckpt_cfg if ckpt_cfg else cfg
     modality = _resolve_modality(eval_cfg)
-    deepbacs_crop = int(eval_cfg.get("deepbacs_center_crop_size", 448))
-    if deepbacs_crop <= 0:
-        raise ValueError(f"deepbacs_center_crop_size must be positive, got {deepbacs_crop}")
-    eval_cfg["deepbacs_center_crop_size"] = deepbacs_crop
+    crop_size = int(
+        eval_cfg.get("center_crop_size", eval_cfg.get("deepbacs_center_crop_size", 448))
+    )
+    if crop_size <= 0:
+        raise ValueError(f"center_crop_size must be positive, got {crop_size}")
+    eval_cfg["center_crop_size"] = crop_size
     if ckpt_cfg:
         print("[eval_em_seg] using cfg from checkpoint for model/data settings.")
     lora_cfg_source = ckpt_cfg if ckpt_cfg else cfg
@@ -602,7 +605,7 @@ def main():
         "foreground_dice": float(dice_f),
         "num_classes": int(eval_cfg["num_classes"]),
         "modality": modality,
-        "deepbacs_center_crop_size": deepbacs_crop,
+        "center_crop_size": crop_size,
     }
     if per_group_metrics:
         eval_payload["foreground_iou_per_dataset"] = {

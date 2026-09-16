@@ -7,17 +7,19 @@ import torch
 from .dinov2 import DINOv2Adapter
 from .dinov3 import DINOv3Adapter
 from .openclip_adapter import OpenCLIPAdapter
-
+from .resnet import ResNet50Adapter
 
 def resolve_backbone_cfg(cfg: Mapping[str, Any]) -> dict:
     raw = dict(cfg.get("backbone") or {})
     name = str(raw.get("name") or cfg.get("backbone_name") or "dinov2").lower()
     variant = raw.get("variant") or cfg.get("dino_size") or cfg.get("variant")
     model = raw.get("model") or variant
+    
     if name == "openclip":
         variant = model or variant or "ViT-L-14"
     if not variant:
         variant = "base"
+    
     load_backend = raw.get("load_backend", "torchhub")
     weights = raw.get("weights") or cfg.get("weights")
     repo_dir = raw.get("repo_dir")
@@ -64,4 +66,11 @@ def build_backbone(backbone_cfg: Mapping[str, Any], device: torch.device | str):
             pretrained=backbone_cfg.get("pretrained"),
             weights=backbone_cfg.get("weights"),
         )
+    if name =="resnet50":
+        return ResNet50Adapter(
+            variant=str(backbone_cfg.get("variant", "resnet50")),
+            device=device, 
+            pretrained=backbone_cfg.get("pretrained")
+        )
+    
     raise ValueError(f"Unsupported backbone name '{name}'.")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -14,6 +14,7 @@ class BackboneOutput:
     grid_size: Tuple[int, int]
     cls_token: Optional[torch.Tensor] = None
     register_tokens: Optional[torch.Tensor] = None
+    feature_maps: Optional[List[torch.Tensor]] = None
 
 
 class BackboneAdapter(nn.Module):

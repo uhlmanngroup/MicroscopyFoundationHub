@@ -7,6 +7,7 @@ __all__ = [
     "BackboneAdapter",
     "BackboneOutput",
     "OpenCLIPAdapter",
+    "ResNet50Adapter",
     "backbone_id",
     "build_backbone",
     "build_preprocess_transform",

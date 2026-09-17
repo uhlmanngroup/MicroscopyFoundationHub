@@ -1,0 +1,53 @@
+# Environment: cluster (UZH Science) — Kasthuri++ only, UNet/ResNet50 full fine-tune.
+# Mirrors kasthuri_dinov3_fullft_cluster.yaml; only the backbone block differs.
+
+extends: defaults
+
+# ---- I/O ----
+train_img_dir: "${data_root}/EM/Kasthuri++/Train_In"
+train_mask_dir: "${data_root}/EM/Kasthuri++/Train_Out"
+test_img_dir:  "${data_root}/EM/Kasthuri++/Test_In"
+test_mask_dir: "${data_root}/EM/Kasthuri++/Test_Out"
+
+# results + experiment naming
+experiment_id: "2026-09-17_kasthuri_resnet50-unet_fullft_seg"
+results_root: "${results_root}/resnet50/seg"
+task_type: "kasthuri-fullft"
+
+# Kasthuri follows Lucchi-style pairing (numeric stems; no image prefix)
+dataset:
+  type: lucchi
+  params:
+    recursive: false
+    image_prefix: ""
+    zfill_width: 4
+
+# ---- model / backbone ----
+# UNet decoder + ImageNet-supervised ResNet50 encoder. This is the CNN null-hypothesis
+# control for the saliency claim: same protocol as the DINOv3 runs, different pretraining
+# paradigm (supervised ImageNet vs self-supervised LVD-1689M).
+backbone:
+  name: resnet50
+  variant: resnet50
+  pretrained: imagenet     # IMAGENET1K_V1; set to 'random' for the no-pretraining ablation
+  preprocess:
+    preset: em             # ImageNet mean/std — matches the encoder's pretraining
+img_size:
+  mode: longest_edge
+  target: 1022             # copied verbatim from the DINOv3 EM configs so both models
+  patch_multiple: 16       # see identical pixels (resolves to a 1008 px long edge).
+  rounding: floor          # The UNet decoder is size-agnostic, so /16 is fine here.
+num_classes: 2
+
+# ---- fine-tuning ----
+# End-to-end only. A frozen conv encoder is a confounded comparison: frozen ImageNet
+# features are generically weak for dense prediction, so a poor result would say nothing
+# about saliency. LoRA is not applicable (target_policy is vit_attention_only).
+use_lora: false
+full_finetune: true
+
+# ---- training ----
+batch_size: 1
+
+# ---- loss ----
+class_weights: [1.0, 15.0]

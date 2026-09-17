@@ -29,6 +29,7 @@ from dino_peft.utils.viz import colorize_mask
 from dino_peft.utils.plots import save_triptych_grid
 from dino_peft.backbones import build_backbone, patch_tokens_to_grid, resolve_backbone_cfg
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
+from dino_peft.models.head_unet import UNetDecoder
 from dino_peft.models.lora import apply_peft
 from dino_peft.utils.paths import setup_run_dir, update_metrics
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
@@ -162,6 +163,7 @@ def eval_loop(
     preview_mode: str = "random",
     preview_cols: int = 4,
     expected_groups: int | None = None,
+    use_unet: bool = False,
 ):
     inter = np.zeros(num_classes, dtype=np.float64)
     union = np.zeros(num_classes, dtype=np.float64)
@@ -224,8 +226,10 @@ def eval_loop(
         masks = masks.to(device, non_blocking=True)
 
         out = backbone(imgs)
-        feats = patch_tokens_to_grid(out)
-        logits = head(feats, masks.shape[-2:])
+        if use_unet:
+            logits = head(out.feature_maps, masks.shape[-2:])
+        else:
+            logits = head(patch_tokens_to_grid(out), masks.shape[-2:])
         pred = logits.argmax(1)
 
         # Per-class stats
@@ -520,12 +524,19 @@ def main():
         collate_fn=pad_collate,
     )
 
-    head = SegHeadDeconv(
-        in_ch=bb.embed_dim,
-        num_classes=eval_cfg["num_classes"],
-        n_ups=4,
-        base_ch=512,
-    ).to(device)
+    use_unet = str(backbone_cfg.get("name", "")).lower() == "resnet50"
+    if use_unet:
+        head = UNetDecoder(
+            encoder_channels=(64, 256, 512, 1024, 2048),
+            num_classes=eval_cfg["num_classes"],
+        ).to(device)
+    else:
+        head = SegHeadDeconv(
+            in_ch=bb.embed_dim,
+            num_classes=eval_cfg["num_classes"],
+            n_ups=4,
+            base_ch=512,
+        ).to(device)
     head.load_state_dict(ckpt["head"])
     backbone_full = ckpt.get("backbone")
     if backbone_full:
@@ -574,6 +585,7 @@ def main():
         preview_mode=preview_mode,
         preview_cols=preview_cols,
         expected_groups=expected_groups,
+        use_unet=use_unet,
     )
 
     # --- write CSV before updating metrics.json ---

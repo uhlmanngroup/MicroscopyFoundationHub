@@ -21,6 +21,7 @@ from dino_peft.backbones import (
 )
 from dino_peft.models.lora import apply_peft, lora_parameters, resolve_full_finetune
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
+from dino_peft.models.head_unet import UNetDecoder
 from dino_peft.utils.paths import setup_run_dir, write_run_info, update_metrics
 from dino_peft.utils.image_size import DEFAULT_IMG_SIZE_CFG
 from dino_peft.utils.sample_groups import (
@@ -301,13 +302,21 @@ class SegTrainer:
 
         # -------- model ----------
         self.backbone = build_backbone(self.backbone_cfg, device=self.device)
-        in_ch = self.backbone.embed_dim
-        self.head = SegHeadDeconv(
-            in_ch=in_ch,
-            num_classes=self.cfg["num_classes"],
-            n_ups=4,
-            base_ch=512,
-        ).to(self.device)
+        # Convolutional backbones expose multi-scale skips and need a UNet decoder;
+        # ViT backbones emit a single patch-token grid consumed by SegHeadDeconv.
+        self.use_unet = str(self.backbone_cfg.get("name", "")).lower() == "resnet50"
+        if self.use_unet:
+            self.head = UNetDecoder(
+                encoder_channels=(64, 256, 512, 1024, 2048),
+                num_classes=self.cfg["num_classes"],
+            ).to(self.device)
+        else:
+            self.head = SegHeadDeconv(
+                in_ch=self.backbone.embed_dim,
+                num_classes=self.cfg["num_classes"],
+                n_ups=4,
+                base_ch=512,
+            ).to(self.device)
 
         self.full_finetune = resolve_full_finetune(self.cfg)
         # -------- LoRA ----------
@@ -339,7 +348,14 @@ class SegTrainer:
             params = list(self.head.parameters())
         self.trainable_params = params
         self.optimizer = torch.optim.AdamW(params, lr=self.cfg["lr"], weight_decay=self.cfg["weight_decay"])
-        print(f"[params] trainable={sum(p.numel() for p in self.trainable_params):,}")
+        self.n_params_encoder = sum(p.numel() for p in self.backbone.model.parameters())
+        self.n_params_decoder = sum(p.numel() for p in self.head.parameters())
+        self.n_params_trainable = sum(p.numel() for p in self.trainable_params)
+        print(
+            f"[params] encoder={self.n_params_encoder:,} decoder={self.n_params_decoder:,} "
+            f"total={self.n_params_encoder + self.n_params_decoder:,} "
+            f"trainable={self.n_params_trainable:,}"
+        )
         if not self.full_finetune:
             print(
                 "[warn] unexpected trainable in backbone:",
@@ -391,6 +407,17 @@ class SegTrainer:
         imgs_tensor = torch.stack(padded_imgs)
         masks_tensor = torch.stack(padded_masks)
         return imgs_tensor, masks_tensor, list(names)
+
+    def _forward_logits(self, imgs, out_hw, backbone_grad: bool = True):
+        """Backbone -> decoder, dispatching on the backbone's feature layout."""
+        if backbone_grad:
+            out = self.backbone(imgs)
+        else:
+            with torch.no_grad():
+                out = self.backbone(imgs)
+        if self.use_unet:
+            return self.head(out.feature_maps, out_hw=out_hw)
+        return self.head(patch_tokens_to_grid(out), out_hw=out_hw)
 
     def train(self):
         best_val = float('inf')
@@ -446,13 +473,11 @@ class SegTrainer:
 
                 self.optimizer.zero_grad(set_to_none=True)
 
-                if self.full_finetune or self.lora_enabled:
-                    out = self.backbone(imgs)
-                else:
-                    with torch.no_grad():
-                        out = self.backbone(imgs)
-                feats = patch_tokens_to_grid(out)
-                logits = self.head(feats, out_hw=masks.shape[-2:])
+                logits = self._forward_logits(
+                    imgs,
+                    out_hw=masks.shape[-2:],
+                    backbone_grad=self.full_finetune or self.lora_enabled,
+                )
 
                 loss = self.criterion(logits, masks.unsqueeze(1)) # From (B, H, W) to (B, K, H, W)  as expected by Monai DiceLoss
                 
@@ -485,9 +510,7 @@ class SegTrainer:
                     imgs = imags.to(self.device, non_blocking=True)
                     masks = masks.to(self.device, non_blocking=True)
 
-                    out = self.backbone(imgs)
-                    feats = patch_tokens_to_grid(out)
-                    logits = self.head(feats, out_hw=masks.shape[-2:])
+                    logits = self._forward_logits(imgs, out_hw=masks.shape[-2:])
                     loss = self.criterion(logits, masks.unsqueeze(1)) # From (B, H, W) to (B, K, H, W)  as expected by Monai DiceLoss
                     val_loss += float(loss)
 
@@ -600,5 +623,9 @@ class SegTrainer:
                 "augmented_images_total": int(augmented_images_total),
                 "clahe_norm": self.clahe_norm,
                 "center_crop_size": int(self.center_crop_size),
+                "params_encoder": int(self.n_params_encoder),
+                "params_decoder": int(self.n_params_decoder),
+                "params_total": int(self.n_params_encoder + self.n_params_decoder),
+                "params_trainable": int(self.n_params_trainable),
             },
         )

@@ -1,0 +1,64 @@
+# Environment: cluster (UZH Science) — joint EM (VNC + Lucchi++ + Kasthuri++),
+# UNet/ResNet50 full fine-tune. THE key experiment: does Lucchi++ collapse under
+# joint training for a CNN, as it does for DINOv3?
+# Mirrors paired_dinov3_cluster.yaml; only the backbone block differs.
+#
+# NOTE: per-source metrics are switched on by the substring "triplet" appearing in
+# train_img_dir / test_img_dir / experiment_id / task_type (see
+# dino_peft.utils.sample_groups.infer_expected_group_count). Both the data paths and
+# task_type below carry it. Without it, metrics.json holds ONE pooled IoU and the
+# per-dataset breakdown this experiment depends on is silently absent.
+
+extends: defaults
+
+# ---- I/O ----
+train_img_dir: "${data_root}/EM/TRIPLET/train/images"
+train_mask_dir: "${data_root}/EM/TRIPLET/train/masks"
+test_img_dir:   "${data_root}/EM/TRIPLET/test/images"
+test_mask_dir:  "${data_root}/EM/TRIPLET/test/masks"
+
+# results + experiment naming
+experiment_id: "2026-09-17_TRIPLET_resnet50-unet_fullft_seg"
+results_root: "${scratch_root}/resnet50/seg"
+task_type: "triplet-fullft"
+
+dataset:
+  type: paired          # generic PairedDirsSegDataset
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+# UNet decoder + ImageNet-supervised ResNet50 encoder. This is the CNN null-hypothesis
+# control for the saliency claim: same protocol as the DINOv3 runs, different pretraining
+# paradigm (supervised ImageNet vs self-supervised LVD-1689M).
+backbone:
+  name: resnet50
+  variant: resnet50
+  pretrained: imagenet     # IMAGENET1K_V1; set to 'random' for the no-pretraining ablation
+  preprocess:
+    preset: em             # ImageNet mean/std — matches the encoder's pretraining
+img_size:
+  mode: longest_edge
+  target: 1022             # copied verbatim from the DINOv3 EM configs so both models
+  patch_multiple: 16       # see identical pixels (resolves to a 1008 px long edge).
+  rounding: floor          # The UNet decoder is size-agnostic, so /16 is fine here.
+num_classes: 2
+
+# ---- fine-tuning ----
+# End-to-end only. A frozen conv encoder is a confounded comparison: frozen ImageNet
+# features are generically weak for dense prediction, so a poor result would say nothing
+# about saliency. LoRA is not applicable (target_policy is vit_attention_only).
+use_lora: false
+full_finetune: true
+
+# ---- training ----
+epochs: 10000
+patience: 20
+
+# ---- training safety ----
+clip_grad_norm: 1.0
+
+# ---- evaluation previews ----
+eval_preview_mode: all   # all|random
+eval_preview_cols: 4

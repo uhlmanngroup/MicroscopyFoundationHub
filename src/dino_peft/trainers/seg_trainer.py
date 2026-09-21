@@ -151,7 +151,17 @@ class SegTrainer:
         self.cfg["img_size"] = deepcopy(self.img_size_cfg)
 
         # --- seed (repro) ---
-        seed = int(self.cfg.get("seed", 0))
+        # Hard failure, not a warning: a missing seed used to fall back to 0 silently,
+        # which ran every "repeat" of a sweep at the same seed and produced variance
+        # that was GPU non-determinism rather than seed variance.
+        if not self.cfg.get("seed_explicit", False):
+            raise ValueError(
+                "No 'seed' set in this config. Every training run must set one explicitly "
+                "so that repeats actually differ. Set 'seed: <int>' in the config, or let "
+                "the sbatch script inject a per-rep value (see "
+                "slurm/em/grid_em_resnet50_fullft.sbatch, which derives it from BASE_SEED)."
+            )
+        seed = int(self.cfg["seed"])
         import random, numpy as np
         random.seed(seed); np.random.seed(seed)
         torch.manual_seed(seed)

@@ -88,7 +88,7 @@ def main() -> int:
 
     # Resolve through the normal loader so `extends` and ${path} placeholders
     # are already applied; the runtime file is then fully self-contained.
-    cfg = load_config(args.base_cfg, warn_seed=False)
+    cfg = load_config(args.base_cfg)
     cfg.pop("seed_explicit", None)
 
     if args.tuning_mode:

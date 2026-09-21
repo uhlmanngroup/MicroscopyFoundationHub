@@ -146,19 +146,6 @@ def _apply_renames(cfg: dict) -> dict:
     return cfg
 
 
-def _warn_missing_seed(cfg_path: Path) -> None:
-    print(
-        "\n"
-        "  ============================================================\n"
-        "  WARNING: no 'seed' in " + str(cfg_path) + "\n"
-        "  Falling back to seed=0. Repeated runs from this config will\n"
-        "  be identical to each other (zero variance across 'seeds').\n"
-        "  Set 'seed' in the config, or pass one from the sbatch script.\n"
-        "  ============================================================\n",
-        flush=True,
-    )
-
-
 def _resolve_extends(name: str) -> Path:
     """Map an ``extends:`` value to a file under ``configs/``."""
     candidate = Path(str(name))
@@ -177,7 +164,6 @@ def load_config(
     *,
     apply_defaults: bool = True,
     expand: bool = True,
-    warn_seed: bool = True,
 ) -> dict:
     """Load a YAML config, resolving ``extends``, defaults and path placeholders.
 
@@ -189,7 +175,6 @@ def load_config(
         cfg_path: the config to load.
         apply_defaults: honour ``extends``. Set False to see a config raw.
         expand: resolve ``${name}`` placeholders from ``configs/paths.yaml``.
-        warn_seed: print a warning when a training config sets no ``seed``.
 
     Returns:
         The fully resolved config as a plain dict.
@@ -211,8 +196,6 @@ def load_config(
     if expand:
         cfg = expand_placeholders(cfg, load_paths())
 
-    if warn_seed and not has_seed and "train_img_dir" in cfg:
-        _warn_missing_seed(path)
     cfg["seed_explicit"] = has_seed
 
     return cfg

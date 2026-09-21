@@ -30,7 +30,7 @@ NUM_WORKERS=${NUM_WORKERS:-}
 AMP=${AMP:-}
 USE_LORA=${USE_LORA:-}
 RUN_TAG=${RUN_TAG:-drosogrid-dinov3-${SLURM_JOB_ID:-manual}}
-SEED=${SEED:-}
+BASE_SEED=${BASE_SEED:-${SEED:-1}}   # per-rep seed = BASE_SEED + rep - 1
 REPEATS=${REPEATS:-5}
 WEIGHTS_VITS16=${WEIGHTS_VITS16:-}
 WEIGHTS_VITB16=${WEIGHTS_VITB16:-}
@@ -137,6 +137,7 @@ run_config() {
   local size="$1"
   local size_idx="$2"
   local rep_id="$3"
+  local rep_seed=$((rep_id + BASE_SEED - 1))
   local size_clean="${size// /}"
   local size_tag="${RUN_TAG}_rep${rep_id}_s$((size_idx + 1))_${size_clean}"
   local batch_val
@@ -147,7 +148,7 @@ run_config() {
     vitb16) weights_override="$WEIGHTS_VITB16" ;;
     vitl16) weights_override="$WEIGHTS_VITL16" ;;
   esac
-  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME" "$weights_override" "$SEED")
+  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$size_clean" "$EPOCHS" "$batch_val" "$NUM_WORKERS" "$AMP" "$USE_LORA" "$size_tag" "$BACKBONE_NAME" "$weights_override" "$rep_seed")
   runtime_cfg="${prep[0]}"
   run_dir="${prep[1]}"
   echo "[grid size=${size_clean} rep=${rep_id}] batch=$batch_val lora=$USE_LORA cfg=$runtime_cfg"

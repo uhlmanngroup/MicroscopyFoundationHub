@@ -6,12 +6,12 @@
 # - experiment_id (optional)
 
 experiment_id: "2026-03-30_domain_shift_em_dinov2-large"
-results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
+results_root: "${results_root}/dinov2"
 task_type: "feat-analysis/domain-shift"
 modality: "em"
 
 data:
-  data_dir: "/home/cfuste/data/datasets/domain_shift/em/images"
+  data_dir: "${data_root}/domain_shift/em/images"
   expected_groups: 3
 
 model:

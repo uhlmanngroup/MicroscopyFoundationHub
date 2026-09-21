@@ -11,8 +11,8 @@ test_mask_dir:   "${data_root}/EM/DINO-POC/test/masks"
 
 # results + experiment naming
 experiment_id: "2026-01-26_dinopoc_openclip_vith14_WITHlora-r16_seg"
-results_root: "${results_root}"
-task_type: "seg"
+results_root: "${results_root}/openclip"
+task_type: "seg/paired-lora"
 
 # stitched dataset already shares a naming scheme between images/masks
 dataset:

@@ -3,15 +3,15 @@
 extends: defaults
 
 # ---- I/O ----
-train_img_dir: "${data_root}/deepbacs/triple/coli-aureus-subtilis/train/images"
-train_mask_dir: "${data_root}/deepbacs/triple/coli-aureus-subtilis/train/masks"
-test_img_dir: "${data_root}/deepbacs/triple/coli-aureus-subtilis/test/images"
-test_mask_dir: "${data_root}/deepbacs/triple/coli-aureus-subtilis/test/masks"
+train_img_dir: "${data_root}/deepbacs/triplet/train/images"
+train_mask_dir: "${data_root}/deepbacs/triplet/train/masks"
+test_img_dir: "${data_root}/deepbacs/triplet/test/images"
+test_mask_dir: "${data_root}/deepbacs/triplet/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_triple_coli-aureus-subtilis_openclip_vitl14_lora_seg"
+experiment_id: "2026-03-03_deepbacs_triplet_openclip_vitl14_lora_seg"
 results_root: "${results_root}/openclip"
-task_type: "coli-aureus-subtilis-lora"
+task_type: "seg/triplet/coli-aureus-subtilis-lora"
 modality: "deepbacs"
 
 dataset:

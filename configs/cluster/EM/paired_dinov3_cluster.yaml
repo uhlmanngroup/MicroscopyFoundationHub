@@ -11,8 +11,8 @@ test_mask_dir:  "${data_root}/EM/TRIPLET/test/masks"
 
 # results + experiment naming
 experiment_id: "2025-02-26_TRIPLET_dinov3_fullft"
-results_root: "${scratch_root}/dinov3/seg"
-task_type: "triplet-fullft"
+results_root: "${scratch_root}/dinov3"
+task_type: "seg/triplet-fullft"
 
 dataset:
   type: paired          # use generic PairedDirsSegDataset

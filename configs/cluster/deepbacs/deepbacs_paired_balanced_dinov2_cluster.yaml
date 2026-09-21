@@ -10,8 +10,8 @@ test_mask_dir: "${data_root}/deepbacs/paired/coli-aureus/test/masks"
 
 # ---- results ----
 experiment_id: "2026-03-24_deepbacs_paired_coli-aureus_dinov2_balance_ablation"
-results_root: "${results_root}/dinov2/deepbacs/seg/paired"
-task_type: "coli-aureus-frozen-balanced"
+results_root: "${results_root}/dinov2"
+task_type: "seg/paired/coli-aureus-frozen-balanced"
 modality: "deepbacs"
 paired_dataset_name: "coli-aureus"
 

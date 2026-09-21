@@ -11,8 +11,8 @@ test_mask_dir:   "${data_root}/EM/TRIPLET/test/masks"
 
 # results + experiment naming
 experiment_id: "2025-02-23_TRIPLET_dinov2_frozen_seg"
-results_root: "${results_root}/dinov2/seg"
-task_type: "triplet-lora"
+results_root: "${results_root}/dinov2"
+task_type: "seg/triplet-lora"
 
 dataset:
   type: paired          # use generic PairedDirsSegDataset

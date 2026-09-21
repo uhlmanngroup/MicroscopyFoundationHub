@@ -11,8 +11,8 @@ test_mask_dir: "${data_root}/EM/Kasthuri++/Test_Out"
 
 # results + experiment naming
 experiment_id: "2026-02-27_kasthuri_dinov2_lora_seg"
-results_root: "${results_root}/dinov2/seg"
-task_type: "kasthuri-lora"
+results_root: "${results_root}/dinov2"
+task_type: "seg/kasthuri-lora"
 
 # Kasthuri follows Lucchi-style pairing (numeric stems; no image prefix)
 dataset:

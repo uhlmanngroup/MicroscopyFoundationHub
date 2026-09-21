@@ -8,7 +8,7 @@
 #SBATCH --output=logs/%x-%A_%a.out
 
 # Example submit with explicit weights:
-# WEIGHTS_VITS16=/home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth WEIGHTS_VITB16=/home/cfuste/data/Models/DINOv3/dinov3_vitb16_pretrain_73cec8be.pth WEIGHTS_VITL16=/home/cfuste/data/Models/DINOv3/dinov3_vitl16_pretrain_eadcf0ff.pth sbatch --array=0-14 slurm/em/grid_paired_dinov3.sbatch
+# WEIGHTS_VITS16=$(dino_peft_path models_root)/dinov3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth WEIGHTS_VITB16=$(dino_peft_path models_root)/dinov3/dinov3_vitb16_pretrain_73cec8be.pth WEIGHTS_VITL16=$(dino_peft_path models_root)/dinov3/dinov3_vitl16_pretrain_eadcf0ff.pth sbatch --array=0-14 slurm/em/grid_paired_dinov3.sbatch
 
 
 

@@ -57,7 +57,7 @@ run_rep() {
     --base-cfg "$BASE_CFG" \
     --tuning-mode "$TUNING_MODE" \
     --seed "$seed" --split-seed "$split_seed" \
-    --task-type "${DATASET}-${TUNING_MODE}" \
+    --task-type "seg/${DATASET}-${TUNING_MODE}" \
     --experiment-id "2026-09-08_monusac_${DATASET}_dinov3_${TUNING_MODE}_seg_${tag}" \
     --prefix "${tag}_" \
     --set "backbone.name=$BACKBONE_NAME" \

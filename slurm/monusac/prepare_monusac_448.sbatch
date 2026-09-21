@@ -15,12 +15,15 @@ PY="$HOME/data/conda/envs/dino-peft/bin/python"
 [ -x "$PY" ] || { echo "Python not found at $PY"; exit 1; }
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
+
+# dino_peft_path(): machine paths straight from configs/paths.yaml
+source slurm/lib/common.sh
 mkdir -p logs
 
 export PYTHONPATH="$PWD/src"
 
-IN_ROOT="${IN_ROOT:-/home/cfuste/data/datasets/monusac}"
-OUT_ROOT="${OUT_ROOT:-/home/cfuste/data/datasets/monusac_448}"
+IN_ROOT="${IN_ROOT:-$(dino_peft_path data_root)/monusac}"
+OUT_ROOT="${OUT_ROOT:-$(dino_peft_path data_root)/monusac_448}"
 
 echo "[prep] Input:  $IN_ROOT"
 echo "[prep] Output: $OUT_ROOT"

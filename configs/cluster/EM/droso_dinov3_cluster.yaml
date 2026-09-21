@@ -10,8 +10,8 @@ test_mask_dir:   "${data_root}/EM/Droso/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2026-01-10_A2_droso-only_dinov3_seg"
-results_root: "${results_root}/dinov3/seg/"
-task_type: "droso-lora"
+results_root: "${results_root}/dinov3"
+task_type: "seg/droso-lora"
 
 # dataset pairing (Drosophila images share numeric stems with their masks)
 dataset:
@@ -25,7 +25,7 @@ backbone:
   variant: vits16
   load_backend: torchhub
   repo_dir: ${dinov3_repo}
-  weights: /home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+  weights: ${models_root}/dinov3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
   preprocess:
     preset: em
 dino_size: vits16

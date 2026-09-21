@@ -12,6 +12,9 @@ PY="${PY:-$HOME/data/conda/envs/dino-peft/bin/python}"
 [ -x "$PY" ] || { echo "[error] Python not found at $PY" >&2; exit 1; }
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
+
+# dino_peft_path(): machine paths straight from configs/paths.yaml
+source slurm/lib/common.sh
 mkdir -p logs
 
 export PYTHONUNBUFFERED=1
@@ -20,10 +23,10 @@ export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 
 PCA_CFG_PATH="${PCA_CFG_PATH:-configs/cluster/domain_shift/domain_shift_3way_pca_dinov2_large.yaml}"
-MERGED_OUTPUT="${MERGED_OUTPUT:-/home/cfuste/data/DINO-LoRA/dinov2/domain-analysis/3way/2026-03-30_domain_shift_3way_dinov2-large/features_merged.npz}"
-EM_NPZ="${EM_NPZ:-/home/cfuste/data/DINO-LoRA/dinov2/em/feat-analysis/domain-shift/2026-03-30_domain_shift_em_dinov2-large/features.npz}"
-DEEPBACS_NPZ="${DEEPBACS_NPZ:-/home/cfuste/data/DINO-LoRA/dinov2/deepbacs/feat-analysis/domain-shift/2026-03-30_domain_shift_deepbacs_dinov2-large/features.npz}"
-OPENIMAGES_NPZ="${OPENIMAGES_NPZ:-/home/cfuste/data/DINO-LoRA/dinov2/openimages/feat-analysis/domain-shift/2026-03-30_domain_shift_openimages_dinov2-large/features.npz}"
+MERGED_OUTPUT="${MERGED_OUTPUT:-$(dino_peft_path results_root)/dinov2/multi/domain-analysis/3way/2026-03-30_domain_shift_3way_dinov2-large/features_merged.npz}"
+EM_NPZ="${EM_NPZ:-$(dino_peft_path results_root)/dinov2/em/feat-analysis/domain-shift/2026-03-30_domain_shift_em_dinov2-large/features.npz}"
+DEEPBACS_NPZ="${DEEPBACS_NPZ:-$(dino_peft_path results_root)/dinov2/deepbacs/feat-analysis/domain-shift/2026-03-30_domain_shift_deepbacs_dinov2-large/features.npz}"
+OPENIMAGES_NPZ="${OPENIMAGES_NPZ:-$(dino_peft_path results_root)/dinov2/openimages/feat-analysis/domain-shift/2026-03-30_domain_shift_openimages_dinov2-large/features.npz}"
 
 if [ ! -f "$PCA_CFG_PATH" ]; then
   echo "[error] PCA config file not found: $PCA_CFG_PATH" >&2

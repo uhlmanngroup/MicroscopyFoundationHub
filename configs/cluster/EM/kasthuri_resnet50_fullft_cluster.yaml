@@ -11,8 +11,8 @@ test_mask_dir: "${data_root}/EM/Kasthuri++/Test_Out"
 
 # results + experiment naming
 experiment_id: "2026-09-17_kasthuri_resnet50-unet_fullft_seg"
-results_root: "${results_root}/resnet50/seg"
-task_type: "kasthuri-fullft"
+results_root: "${results_root}/resnet50"
+task_type: "seg/kasthuri-fullft"
 
 # Kasthuri follows Lucchi-style pairing (numeric stems; no image prefix)
 dataset:

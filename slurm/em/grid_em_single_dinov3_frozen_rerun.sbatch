@@ -25,6 +25,9 @@ PY="$HOME/data/conda/envs/dino-peft/bin/python"
 [ -x "$PY" ] || { echo "Python not found at $PY"; exit 1; }
 
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
+
+# dino_peft_path(): machine paths straight from configs/paths.yaml
+source slurm/lib/common.sh
 mkdir -p logs
 
 export PYTHONUNBUFFERED=1
@@ -36,24 +39,24 @@ DATASET=${DATASET:-droso}
 REPEATS=${REPEATS:-5}
 BASE_SEED=${BASE_SEED:-1}
 BASE_SPLIT_SEED=${BASE_SPLIT_SEED:-101}
-WEIGHTS="/home/cfuste/scratch/data/models/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
-RESULTS_ROOT="/home/cfuste/scratch/DINO-LoRA/dinov3/seg"
+WEIGHTS="$(dino_peft_path models_root)/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+RESULTS_ROOT="$(dino_peft_path scratch_root)/dinov3"
 
 case "$DATASET" in
   droso)
     BASE_CFG="configs/cluster/EM/droso_dinov3_cluster.yaml"
-    TRAIN_IMG="/home/cfuste/data/datasets/EM/Droso/Train_In"
-    TEST_IMG="/home/cfuste/data/datasets/EM/Droso/Test_In"
+    TRAIN_IMG="$(dino_peft_path data_root)/EM/Droso/Train_In"
+    TEST_IMG="$(dino_peft_path data_root)/EM/Droso/Test_In"
     ;;
   kasthuri)
     BASE_CFG="configs/cluster/EM/kasthuri_dinov3_head_cluster.yaml"
-    TRAIN_IMG="/home/cfuste/data/datasets/EM/Kasthuri++/Train_In"
-    TEST_IMG="/home/cfuste/data/datasets/EM/Kasthuri++/Test_In"
+    TRAIN_IMG="$(dino_peft_path data_root)/EM/Kasthuri++/Train_In"
+    TEST_IMG="$(dino_peft_path data_root)/EM/Kasthuri++/Test_In"
     ;;
   lucchi)
     BASE_CFG="configs/cluster/EM/lucchi_dinov3_head_cluster.yaml"
-    TRAIN_IMG="/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
-    TEST_IMG="/home/cfuste/data/datasets/EM/Lucchi++/Test_In"
+    TRAIN_IMG="$(dino_peft_path data_root)/EM/Lucchi++/Train_In"
+    TEST_IMG="$(dino_peft_path data_root)/EM/Lucchi++/Test_In"
     ;;
   *)
     echo "[error] Unknown DATASET='$DATASET'. Use: droso | kasthuri | lucchi" >&2
@@ -117,7 +120,7 @@ if split_seed: cfg["split_seed"] = int(split_seed)
 
 # identifiers
 tag = tag or "manual"
-cfg["task_type"]     = f"{dataset}-nolora"
+cfg["task_type"]     = f"seg/{dataset}-nolora"
 cfg["experiment_id"] = f"2026-09-10_em_{dataset}_dinov3_frozen_seg_{tag}"
 root = pathlib.Path(results_root)
 out_dir = root / "em" / cfg["task_type"] / cfg["experiment_id"]

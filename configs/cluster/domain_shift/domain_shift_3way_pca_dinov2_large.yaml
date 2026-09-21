@@ -6,12 +6,12 @@
 # - experiment_id (optional)
 
 experiment_id: "2026-03-30_domain_shift_3way_pca_dinov2-large"
-results_root: "/home/cfuste/data/DINO-LoRA/dinov2"
-task_type: "3way"
-modality: "domain-analysis"
+results_root: "${results_root}/dinov2"
+task_type: "domain-analysis/3way"
+modality: "multi"
 
 data:
-  input_path: "/home/cfuste/data/DINO-LoRA/dinov2/domain-analysis/3way/2026-03-30_domain_shift_3way_dinov2-large/features_merged.npz"
+  input_path: "${results_root}/dinov2/multi/domain-analysis/3way/2026-03-30_domain_shift_3way_dinov2-large/features_merged.npz"
 
 pca:
   n_components: 50

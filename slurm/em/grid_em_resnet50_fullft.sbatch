@@ -41,6 +41,7 @@ REPEATS=${REPEATS:-5}
 BASE_SEED=${BASE_SEED:-1}         # matches the DINOv3 EM runs: seeds 1-5
 BASE_SPLIT_SEED=${BASE_SPLIT_SEED:-101}   # ... and split_seeds 101-105
 BATCH_SIZE=${BATCH_SIZE:-}        # empty -> use the config's own value
+EPOCHS=${EPOCHS:-}                # empty -> use the config's own value (smoke tests: EPOCHS=2)
 
 case "$DATASET" in
   lucchi)   BASE_CFG="configs/cluster/EM/lucchi_resnet50_fullft_cluster.yaml" ;;
@@ -71,20 +72,22 @@ archive_slurm_log() {
 }
 
 prepare_cfg() {
-  local base_cfg="$1" seed="$2" split_seed="$3" tag="$4" dataset="$5" batch="$6"
-  "$PY" - "$base_cfg" "$seed" "$split_seed" "$tag" "$dataset" "$batch" <<'PY'
+  local base_cfg="$1" seed="$2" split_seed="$3" tag="$4" dataset="$5" batch="$6" epochs="$7"
+  "$PY" - "$base_cfg" "$seed" "$split_seed" "$tag" "$dataset" "$batch" "$epochs" <<'PY'
 import pathlib, sys, tempfile, yaml
 
 sys.path.insert(0, "src")
 from dino_peft.config import expand_placeholders, load_paths
 
-base_cfg, seed, split_seed, tag, dataset, batch = sys.argv[1:]
+base_cfg, seed, split_seed, tag, dataset, batch, epochs = sys.argv[1:]
 cfg = yaml.safe_load(open(base_cfg))
 
 cfg["full_finetune"] = True
 cfg["use_lora"]      = False
 if batch:
     cfg["batch_size"] = int(batch)
+if epochs:
+    cfg["epochs"] = int(epochs)
 
 if seed:       cfg["seed"]       = int(seed)
 if split_seed: cfg["split_seed"] = int(split_seed)
@@ -117,7 +120,7 @@ run_rep() {
   local split_seed=$((BASE_SPLIT_SEED + rep_idx))
   local rep_tag="rep$((rep_idx + 1))"
 
-  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$seed" "$split_seed" "$rep_tag" "$DATASET" "$BATCH_SIZE")
+  mapfile -t prep < <(prepare_cfg "$BASE_CFG" "$seed" "$split_seed" "$rep_tag" "$DATASET" "$BATCH_SIZE" "$EPOCHS")
   local runtime_cfg="${prep[0]}"
   local run_dir="${prep[1]}"
 

@@ -9,9 +9,9 @@ test_img_dir: "${data_root}/deepbacs/triplet/test/images"
 test_mask_dir: "${data_root}/deepbacs/triplet/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_triple_coli-aureus-subtilis_dinov3_lora_seg"
-results_root: "${scratch_root}/dinov3/seg"
-task_type: "coli-aureus-subtilis-lora"
+experiment_id: "2026-03-03_deepbacs_triplet_dinov3_lora_seg"
+results_root: "${scratch_root}/dinov3"
+task_type: "seg/triplet/coli-aureus-subtilis-lora"
 modality: "deepbacs"
 
 dataset:

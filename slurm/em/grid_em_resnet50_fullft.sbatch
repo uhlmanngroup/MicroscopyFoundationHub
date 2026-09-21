@@ -76,6 +76,9 @@ prepare_cfg() {
   "$PY" - "$base_cfg" "$seed" "$split_seed" "$tag" "$dataset" "$batch" "$epochs" <<'PY'
 import pathlib, sys, tempfile, yaml
 
+sys.path.insert(0, "src")
+from dino_peft.config import expand_placeholders, load_paths
+
 base_cfg, seed, split_seed, tag, dataset, batch, epochs = sys.argv[1:]
 cfg = yaml.safe_load(open(base_cfg))
 
@@ -93,7 +96,11 @@ tag = tag or "manual"
 base_exp = cfg.get("experiment_id") or f"{dataset}_resnet50_fullft"
 cfg["experiment_id"] = f"{base_exp}_{tag}"
 
-root = pathlib.Path(cfg.get("results_root", "runs")).expanduser()
+# The config spells its roots as ${results_root}/${scratch_root}; resolve them the
+# way load_config() will, because run_dir is echoed back to bash, which would not
+# expand a ${...} of its own and would make a directory by that literal name.
+paths = load_paths()
+root = pathlib.Path(expand_placeholders(cfg.get("results_root", "runs"), paths)).expanduser()
 cfg["results_root"] = str(root)
 modality = str(cfg.get("modality", "em")).strip().lower() or "em"
 out_dir = root / modality / cfg["task_type"] / cfg["experiment_id"]

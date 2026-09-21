@@ -12,7 +12,7 @@ test_mask_dir:   "${data_root}/EM/Lucchi++/Test_Out"
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2025-01-09_lucchi-only_dinov3-vits16_head_seg"
 results_root: "${results_root}/dinov3"
-task_type: "seg"
+task_type: "seg/lucchi-head"
 
 # dataset pairing (Lucchi images are named maskXXXX vs masks as digits)
 dataset:

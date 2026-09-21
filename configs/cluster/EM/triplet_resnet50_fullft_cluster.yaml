@@ -19,8 +19,8 @@ test_mask_dir:  "${data_root}/EM/TRIPLET/test/masks"
 
 # results + experiment naming
 experiment_id: "2026-09-17_TRIPLET_resnet50-unet_fullft_seg"
-results_root: "${scratch_root}/resnet50/seg"
-task_type: "triplet-fullft"
+results_root: "${scratch_root}/resnet50"
+task_type: "seg/triplet-fullft"
 
 dataset:
   type: paired          # generic PairedDirsSegDataset

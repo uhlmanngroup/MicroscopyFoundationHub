@@ -17,7 +17,7 @@ test_mask_dir:   "${data_root}/EM/Lucchi++/Test_Out"
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2026-01-19_dinov2-ablationstudy-base_seg"
 results_root: "${results_root}/dinov2"
-task_type: "ablationstudy"
+task_type: "seg/ablationstudy"
 
 # dataset pairing (Lucchi images are named maskXXXX vs masks as digits)
 dataset:

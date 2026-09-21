@@ -11,8 +11,8 @@ test_mask_dir:   "${data_root}/EM/Lucchi++/Test_Out"
 
 # results + experiment naming (stored under /data to persist on the cluster)
 experiment_id: "2025-01-02_A1_lucchi-only_dinov3-vits16_lora-r16_seg"
-results_root: "${results_root}"
-task_type: "seg"
+results_root: "${results_root}/dinov3"
+task_type: "seg/lucchi-lora"
 
 # dataset pairing (Lucchi images are named maskXXXX vs masks as digits)
 dataset:
@@ -28,7 +28,7 @@ backbone:
   variant: vits16
   load_backend: torchhub
   repo_dir: ${dinov3_repo}
-  weights: /home/cfuste/data/Models/DINOv3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+  weights: ${models_root}/dinov3/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
   preprocess:
     preset: em
 dino_size: vits16

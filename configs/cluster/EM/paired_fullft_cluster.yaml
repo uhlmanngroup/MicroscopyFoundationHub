@@ -11,8 +11,8 @@ test_mask_dir:   "${data_root}/EM/TRIPLET/test/masks"
 
 # results + experiment naming
 experiment_id: "2026-02-18_A2_dinopoc_fullft_DA_seg"
-results_root: "${results_root}/dinov2/seg/"
-task_type: "triplet-fullft"
+results_root: "${results_root}/dinov2"
+task_type: "seg/triplet-fullft"
 
 # stitched dataset already shares a naming scheme between images/masks
 dataset:

@@ -10,8 +10,8 @@ test_mask_dir: "${data_root}/deepbacs/paired/aureus-subtilis/test/masks"
 
 # ---- results ----
 experiment_id: "2026-03-03_deepbacs_paired_aureus-subtilis_dinov3_lora_seg"
-results_root: "${scratch_root}/dinov3/seg"
-task_type: "aureus-subtilis-lora"
+results_root: "${scratch_root}/dinov3"
+task_type: "seg/paired/aureus-subtilis-lora"
 modality: "deepbacs"
 paired_dataset_name: "aureus-subtilis"
 

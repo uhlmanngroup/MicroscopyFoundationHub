@@ -11,8 +11,8 @@ test_mask_dir: "${data_root}/monusac_448/epithelial/test/masks"
 
 # ---- results ----
 experiment_id: "2026-09-14_monusac_epithelial_dinov3_head_smoketest"
-results_root: "${scratch_root}/dinov3/seg"
-task_type: "epithelial-smoketest"
+results_root: "${scratch_root}/dinov3"
+task_type: "seg/epithelial-smoketest"
 modality: "monusac"
 
 dataset:

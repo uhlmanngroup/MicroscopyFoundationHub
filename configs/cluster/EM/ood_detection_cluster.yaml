@@ -2,17 +2,17 @@
 # Submit via: python scripts/ood_detection.py --cfg configs/cluster/EM/ood_detection_cluster.yaml
 
 experiment_id: "2025-02-10_B1_lucchi-vs-droso_dinov2-base_lora-r16_ood"
-results_root: "/home/cfuste/data/DINO-LoRA"
+results_root: "${results_root}/dinov2"
 task_type: "ood-detection"
 
 data:
   id:
-    path: "/home/cfuste/data/datasets/EM/Lucchi++/Train_In"
+    path: "${data_root}/EM/Lucchi++/Train_In"
     recursive: true
     file_glob: ["*.png", "*.tif"]
     sequence_regex: '(?i)lucchi[_-]*(\d+)'
   target:
-    path: "/home/cfuste/data/datasets/EM/Droso/Test_In"
+    path: "${data_root}/EM/Droso/Test_In"
     recursive: true
     file_glob: ["*.tif"]
     sequence_regex: '(?i)droso[_-]*(\d+)'
@@ -28,7 +28,7 @@ model:
     preprocess:
       preset: em
   dino_size: "base"
-  checkpoint: "/home/cfuste/data/DINO-LoRA/seg/2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg/ckpts/best_model.pt"
+  checkpoint: "${ckpt_root}/dinov2/em/seg/lucchi-lora/2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg_lucchigrid24490264_rep1_s2_base/ckpts/best_model.pt"
   pooling: "mean"
   l2_normalize: true
 

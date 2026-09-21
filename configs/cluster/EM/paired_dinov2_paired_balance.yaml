@@ -11,7 +11,7 @@ test_mask_dir: "${data_root}/EM/DINO-POC/test/masks"
 
 # results + experiment naming
 experiment_id: "ablation_paired_balance_dinov2"
-results_root: "${results_root}/dinov2/"
+results_root: "${results_root}/dinov2"
 task_type: "seg"
 
 # paired dataset (filenames include 'lucchi' or 'droso')

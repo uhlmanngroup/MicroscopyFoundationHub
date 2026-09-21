@@ -11,8 +11,8 @@ test_mask_dir:   "${data_root}/EM/Droso/Test_Out"
 
 # results + experiment naming
 experiment_id: "2026-02-16_droso_openclip_vitl14_fullft_seg"
-results_root: "${results_root}/openclip/seg"
-task_type: "droso-fullft"
+results_root: "${results_root}/openclip"
+task_type: "seg/droso-fullft"
 
 # dataset pairing (drosophila images share numeric stems with their masks)
 dataset:

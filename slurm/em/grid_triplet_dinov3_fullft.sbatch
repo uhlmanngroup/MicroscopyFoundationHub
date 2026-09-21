@@ -69,7 +69,7 @@ if seed:       cfg["seed"]       = int(seed)
 if split_seed: cfg["split_seed"] = int(split_seed)
 
 tag = tag or "manual"
-cfg["task_type"]     = "triplet-fullft"
+cfg["task_type"]     = "seg/triplet-fullft"
 cfg["experiment_id"] = f"2026-09-08_em_triplet_dinov3_fullft_seg_{tag}"
 root = pathlib.Path(cfg.get("results_root", "runs")).expanduser()
 cfg["results_root"]  = str(root)

@@ -10,8 +10,8 @@ test_mask_dir: "${data_root}/deepbacs/single/subtilis/test/masks"
 
 # ---- results ----
 experiment_id: "2026-03-03_deepbacs_subtilis_dinov3_lora_seg"
-results_root: "${scratch_root}/dinov3/seg"
-task_type: "subtilis-lora"
+results_root: "${scratch_root}/dinov3"
+task_type: "seg/single/subtilis-lora"
 modality: "deepbacs"
 
 dataset:

@@ -18,6 +18,9 @@ results_root: /home/cfuste/data/DINO-LoRA
 # Run outputs on scratch — where recent experiments write.
 scratch_root: /home/cfuste/scratch/DINO-LoRA
 
+# Trained run checkpoints (best_model.pt / last_model.pt), kept off /data.
+ckpt_root: /home/cfuste/scratch/DINO-LoRA-ckpts
+
 # Downloaded backbone checkpoints (DINOv3 .pth files).
 models_root: /home/cfuste/scratch/data/models
 

@@ -70,7 +70,8 @@ def build_backbone(backbone_cfg: Mapping[str, Any], device: torch.device | str):
         return ResNet50Adapter(
             variant=str(backbone_cfg.get("variant", "resnet50")),
             device=device, 
-            pretrained=backbone_cfg.get("pretrained")
+            pretrained=backbone_cfg.get("pretrained"),
+            weights=backbone_cfg.get("weights"),
         )
     
     raise ValueError(f"Unsupported backbone name '{name}'.")

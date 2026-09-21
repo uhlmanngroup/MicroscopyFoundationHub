@@ -10,8 +10,8 @@ test_mask_dir: "${data_root}/monusac_448/epithelial/test/masks"
 
 # ---- results ----
 experiment_id: "2026-09-08_monusac_epithelial_dinov3_lora_seg"
-results_root: "${scratch_root}/dinov3/seg"
-task_type: "epithelial-lora"
+results_root: "${scratch_root}/dinov3"
+task_type: "seg/epithelial-lora"
 modality: "monusac"
 
 dataset:

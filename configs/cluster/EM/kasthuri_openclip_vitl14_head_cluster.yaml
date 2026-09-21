@@ -11,8 +11,8 @@ test_mask_dir: "${data_root}/EM/Kasthuri++/Test_Out"
 
 # results + experiment naming
 experiment_id: "2026-02-27_kasthuri_openclip_vitl14_head_seg"
-results_root: "${results_root}/openclip/seg"
-task_type: "kasthuri-head"
+results_root: "${results_root}/openclip"
+task_type: "seg/kasthuri-head"
 
 # Kasthuri follows Lucchi-style pairing (numeric stems; no image prefix)
 dataset:

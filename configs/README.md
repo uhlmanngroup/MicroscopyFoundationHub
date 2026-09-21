@@ -13,7 +13,7 @@ refer to them with `${...}` rather than hardcoding:
 
 ```yaml
 train_img_dir: "${data_root}/EM/Lucchi++/Train_In"
-results_root: "${scratch_root}/dinov3/seg"
+results_root: "${scratch_root}/dinov3"
 ```
 
 | key | what it points at |
@@ -22,6 +22,7 @@ results_root: "${scratch_root}/dinov3/seg"
 | `results_root` | run outputs on persistent storage |
 | `scratch_root` | run outputs on scratch, where recent runs write |
 | `models_root` | downloaded backbone checkpoints |
+| `ckpt_root` | trained run checkpoints (`best_model.pt`) |
 | `dinov3_repo` | local clone of facebookresearch/dinov3 |
 
 To run elsewhere, edit `paths.yaml` — or override any entry from the environment
@@ -80,4 +81,26 @@ Sweep scripts pass `--seed` per repetition.
 - `clahe_norm`: subtle CLAHE on all splits before ImageNet normalisation.
 - For `deepbacs` and `monusac`, the pipeline forces `img_size.mode: native`.
 
-Run outputs land in `<results_root>/<modality>/<task_type>/<experiment_id>/`.
+## 4. Where a run lands
+
+Run outputs land in `<results_root>/<modality>/<task_type>/<experiment_id>/`,
+which the configs use to spell one layout:
+
+```
+<backbone>/<modality>/<family>/<group>/<experiment_id>/
+dinov2/em/seg/lucchi-lora/2025-01-01_A1_lucchi-only_dinov2-base_lora-r16_seg/
+```
+
+- **backbone** closes `results_root`: `"${results_root}/dinov2"`.
+- **modality** is the imaging domain — `em`, `deepbacs`, `monusac`,
+  `openimages`, or `multi` when a run merges several.
+- **family** is what the run produces, and opens `task_type`: `seg` for
+  segmentation, `feat-analysis` and `domain-analysis` for unsupervised feature
+  work, `ood-detection`. Unsupervised results are not segmentation results, so
+  they never share a directory.
+- **group** closes `task_type`: `task_type: "seg/lucchi-lora"`. It names the
+  dataset and tuning mode the repetitions of one experiment share.
+
+A run that needs no group stops at the family (`task_type: "seg"`). DeepBacs
+adds the combination between the two, mirroring the dataset tree:
+`task_type: "seg/paired/coli-aureus-lora"`.

@@ -1,0 +1,43 @@
+# Environment: cluster (UZH Science) — MoNuSAC epithelial, UNet/ResNet50 full fine-tune.
+# CNN baseline for "When Visual Saliency Outweighs Biology" (ISBI 2026).
+# Mirrors monusac_epithelial_dinov3_cluster.yaml; only the backbone and regime differ.
+
+extends: defaults
+
+# ---- I/O ----
+train_img_dir: "${data_root}/monusac_448/epithelial/train/images"
+train_mask_dir: "${data_root}/monusac_448/epithelial/train/masks"
+test_img_dir: "${data_root}/monusac_448/epithelial/test/images"
+test_mask_dir: "${data_root}/monusac_448/epithelial/test/masks"
+
+# ---- results ----
+experiment_id: "2026-09-22_monusac_epithelial_resnet50-unet_fullft_seg"
+results_root: "${scratch_root}/resnet50"
+task_type: "seg/epithelial-fullft"
+modality: "monusac"
+
+dataset:
+  type: paired
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+# UNet decoder + ImageNet-supervised ResNet50 encoder — the CNN control.
+# modality: monusac forces img_size.mode=native and a paired 448x448 centre crop,
+# so every input is 448x448 (14 x 32, cleanly divisible by the encoder stride).
+backbone:
+  name: resnet50
+  variant: resnet50
+  pretrained: imagenet     # IMAGENET1K_V1; set to 'random' for the no-pretraining ablation
+  preprocess:
+    preset: em             # ImageNet mean/std — matches the encoder's pretraining
+img_size:
+  mode: native
+num_classes: 2
+
+# ---- fine-tuning ----
+# End-to-end only. LoRA targets ViT attention projections and has no ResNet
+# equivalent; a frozen conv encoder is a confounded comparison for dense prediction.
+use_lora: false
+full_finetune: true

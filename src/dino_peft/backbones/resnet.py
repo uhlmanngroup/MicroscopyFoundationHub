@@ -48,10 +48,15 @@ def _load_state_dict(w: ResNet50_Weights | None, weights: str | None) -> dict:
         print("[resnet50] models_root undefined; falling back to the torchvision cache")
         return w.get_state_dict(progress=False)
 
-    model_dir.mkdir(parents=True, exist_ok=True)
-    state = torch.hub.load_state_dict_from_url(
-        w.url, model_dir=str(model_dir), map_location="cpu", progress=False
-    )
+    try:
+        model_dir.mkdir(parents=True, exist_ok=True)
+        state = torch.hub.load_state_dict_from_url(
+            w.url, model_dir=str(model_dir), map_location="cpu", progress=False
+        )
+    except OSError as exc:
+        # models_root is a cluster path; off the cluster it may not be creatable.
+        print(f"[resnet50] {model_dir} unusable ({exc}); falling back to the torchvision cache")
+        return w.get_state_dict(progress=False)
     print(f"[resnet50] weights <- {model_dir / Path(w.url).name}")
     return state
 

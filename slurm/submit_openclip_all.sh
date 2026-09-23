@@ -33,13 +33,20 @@ OPENCLIP_PRETRAINED=${OPENCLIP_PRETRAINED:-laion2b_s32b_b82k}
 PY=${PY:-$HOME/data/conda/envs/dino-peft/bin/python}
 mkdir -p logs
 
-# One download here beats 30 array tasks racing for the same cache entry, and a node
-# without network fails now instead of an hour into the sweep. SKIP_PREFETCH=1 opts out.
+# One download here beats twenty array tasks racing for the same cache entry.
+# Deliberately non-fatal: this is an optimisation, and a login node that kills it on a
+# CPU-time or memory ulimit must not also cancel the submission. Worst case the jobs
+# download it themselves. SKIP_PREFETCH=1 skips it outright.
 if [ -z "$SKIP_PREFETCH" ] && [ -z "$DRY_RUN" ]; then
   echo "--- prefetching OpenCLIP weights ---"
-  PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" \
-    "$PY" scripts/utils/prefetch_openclip.py \
-      --model "$OPENCLIP_MODEL" --pretrained "$OPENCLIP_PRETRAINED"
+  if PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}" \
+       "$PY" scripts/utils/prefetch_openclip.py \
+         --model "$OPENCLIP_MODEL" --pretrained "$OPENCLIP_PRETRAINED"; then
+    :
+  else
+    echo "[warn] prefetch did not finish (exit $?) — continuing." >&2
+    echo "[warn] If the weights are not already cached, the first jobs will fetch them." >&2
+  fi
   echo
 fi
 

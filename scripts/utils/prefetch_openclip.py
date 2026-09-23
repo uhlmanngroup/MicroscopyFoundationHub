@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Download an OpenCLIP checkpoint once, before a sweep fans out.
+"""Fetch an OpenCLIP checkpoint into the local cache, before a sweep fans out.
 
-open_clip fetches weights lazily on first use. Submitting 30 array jobs therefore
-sends 30 processes at the same cache directory at the same time, which either
-re-downloads the same ~1.7 GB repeatedly or corrupts a partial file. Running this on
-the submit host first turns that into one download, and fails immediately (with a
-readable error) if the node has no network rather than 30 jobs failing an hour in.
+open_clip downloads weights lazily on first use, so submitting twenty array jobs sends
+twenty processes at the same cache entry at once — repeated downloads of the same ~1.7 GB,
+or a torn partial file. Doing it once first avoids that.
+
+This downloads the file and does NOT build the model: constructing a ViT-L costs enough
+CPU to trip the ulimit on a login node, and nothing here needs the weights in memory.
+
+Already cached is the normal case (a pilot run warms it), and then this returns at once.
 
 Example:
     python scripts/utils/prefetch_openclip.py --model ViT-L-14 --pretrained laion2b_s32b_b82k
@@ -21,6 +24,8 @@ def parse_args() -> argparse.Namespace:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="ViT-L-14")
     ap.add_argument("--pretrained", default="laion2b_s32b_b82k")
+    ap.add_argument("--cache-dir", default=None,
+                    help="Override the download cache (default: open_clip's own).")
     return ap.parse_args()
 
 
@@ -28,6 +33,7 @@ def main() -> int:
     args = parse_args()
     try:
         import open_clip
+        from open_clip.pretrained import download_pretrained, get_pretrained_cfg
     except ImportError:
         print("[error] open_clip is not installed in this environment. "
               "It is a declared dependency, so `pip install -e .` (or "
@@ -41,9 +47,15 @@ def main() -> int:
               f"Known tags: {tags}", file=sys.stderr)
         return 1
 
+    cfg = get_pretrained_cfg(args.model, args.pretrained)
+    if not cfg:
+        print(f"[error] no pretrained cfg for {args.model} / {args.pretrained}", file=sys.stderr)
+        return 1
+
     print(f"[prefetch] {args.model} @ {args.pretrained} ...")
-    open_clip.create_model(args.model, pretrained=args.pretrained)
-    print("[prefetch] weights are in the cache; the sweep will not re-download them.")
+    path = download_pretrained(cfg, cache_dir=args.cache_dir)
+    print(f"[prefetch] cached at {path}")
+    print("[prefetch] the sweep will not re-download it.")
     return 0
 
 

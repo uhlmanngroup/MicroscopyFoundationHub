@@ -456,12 +456,21 @@ class SegTrainer:
         print(f"[train] run_name={run_name}")
 
         # --------- training loop ----------
+        # Wall time per epoch and peak GPU memory, recorded so a short pilot run can
+        # answer "does the full sweep fit, and how long will it take" from data rather
+        # than from an estimate. Costs nothing: two counters and a reset.
+        import time as _time
+        if self.device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats()
+        train_started = _time.perf_counter()
+        epoch_seconds = []
         epochs_since_improve = 0
         epochs_completed = 0
         best_train_loss = float("inf")
         last_train_loss = float("inf")
         last_val_loss = float("inf")
         for epoch in range(1, self.epochs + 1):
+            epoch_started = _time.perf_counter()
             self.backbone.train(self.full_finetune or self.lora_enabled)
             self.head.train(True)
 
@@ -578,7 +587,14 @@ class SegTrainer:
             last_train_loss = float(avg_train)
             last_val_loss = float(val_loss)
             epochs_completed = epoch
-            print(f"[epoch {epoch}/{self.epochs}] train_loss={avg_train:.4f}  val_loss={val_loss:.4f}")
+            epoch_seconds.append(_time.perf_counter() - epoch_started)
+            peak_note = ""
+            if self.device.type == "cuda":
+                peak_note = f"  peak_gpu={torch.cuda.max_memory_allocated() / 2**30:.1f}GiB"
+            print(
+                f"[epoch {epoch}/{self.epochs}] train_loss={avg_train:.4f}  "
+                f"val_loss={val_loss:.4f}  {epoch_seconds[-1]:.1f}s{peak_note}"
+            )
             if self.data_augmentation:
                 print(
                     f"[epoch {epoch}/{self.epochs}] augmented_images={augmented_images_epoch} "
@@ -637,5 +653,13 @@ class SegTrainer:
                 "params_decoder": int(self.n_params_decoder),
                 "params_total": int(self.n_params_encoder + self.n_params_decoder),
                 "params_trainable": int(self.n_params_trainable),
+                "train_seconds_total": float(_time.perf_counter() - train_started),
+                "train_seconds_per_epoch": (
+                    float(sum(epoch_seconds) / len(epoch_seconds)) if epoch_seconds else None
+                ),
+                "peak_gpu_mem_gib": (
+                    float(torch.cuda.max_memory_allocated() / 2**30)
+                    if self.device.type == "cuda" else None
+                ),
             },
         )

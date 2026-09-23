@@ -185,3 +185,15 @@ dependencies:
       - uvicorn==0.37.0
       - werkzeug==3.1.1
       - zipp==3.23.0
+      # --- OpenCLIP backbone ---
+      # Added by hand: both env files were exported on 2026-01-05, nine days before the
+      # OpenCLIP backbone landed, so the export never saw open-clip-torch or the five
+      # packages it pulls in. Unpinned on purpose — pinning a version nobody has
+      # installed would be worse than leaving pip to resolve it. `pip install -e .`
+      # also brings it in, since pyproject.toml declares it.
+      - open-clip-torch
+      - ftfy
+      - huggingface-hub
+      - regex
+      - safetensors
+      - timm

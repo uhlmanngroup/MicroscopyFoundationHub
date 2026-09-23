@@ -16,9 +16,10 @@ happen in exactly one place:
    environment with ``DINO_PEFT_<KEY>`` (e.g. ``DINO_PEFT_DATA_ROOT``), so the
    same config runs on the cluster and on a laptop without being edited.
 
-3. **Seed visibility.** A config with no ``seed`` silently trains at seed 0.
-   That is how a set of "repeated" runs once ended up identical, so loading a
-   config without one now prints a loud warning.
+3. **Seed visibility.** A config with no ``seed`` used to silently train at seed 0.
+   That is how a set of "repeated" runs once ended up identical, so this records
+   whether the seed was explicit (``seed_explicit``) and ``SegTrainer`` refuses to
+   train without one.
 
 Configs that predate this module keep working unchanged: absolute paths are
 left alone, and defaults only ever fill in keys that are absent.

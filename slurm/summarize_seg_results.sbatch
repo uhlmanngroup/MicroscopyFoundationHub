@@ -22,17 +22,13 @@ export PYTHONPATH="$PWD/src"
 export TQDM_DISABLE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 
-ROOT=${ROOT:-"$(dino_peft_path results_root)/openclip/em/seg"}
-SUMMARY_DIR=${SUMMARY_DIR:-}
-EXTRA_ARGS=()
-
-if [ -n "$SUMMARY_DIR" ]; then
-  EXTRA_ARGS+=(--summary-dir "$SUMMARY_DIR")
-fi
+ROOT=${ROOT:-"$(dino_peft_path scratch_root)/dinov3"}
+# The script takes a folder NAME, created under ROOT — not a path. Passing
+# --summary-dir here used to make argparse reject the whole call.
+SUMMARY_DIR_NAME=${SUMMARY_DIR_NAME:-summary}
+EXTRA_ARGS=(--summary-dir-name "$SUMMARY_DIR_NAME")
 
 echo "[summary] root=$ROOT"
-if [ -n "$SUMMARY_DIR" ]; then
-  echo "[summary] summary_dir=$SUMMARY_DIR"
-fi
+echo "[summary] reports -> $ROOT/$SUMMARY_DIR_NAME"
 
 "$PY" scripts/analysis/summarize_seg_results.py --root "$ROOT" "${EXTRA_ARGS[@]}"

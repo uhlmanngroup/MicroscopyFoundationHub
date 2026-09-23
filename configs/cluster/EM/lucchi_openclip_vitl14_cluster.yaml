@@ -1,18 +1,26 @@
-# Environment: cluster (UZH Science) - Lucchi-only segmentation run
-# OpenCLIP ViT-L-14 config.
+# Environment: cluster (UZH Science) — Lucchi++ only, OpenCLIP ViT-L-14.
+#
+# Regime-agnostic base. `use_lora` / `full_finetune` are NOT set here: the sweep
+# passes --tuning-mode head|lora|fullft to scripts/utils/make_runtime_cfg.py, which
+# sets them together so a config cannot end up in a half-configured regime.
+#   sbatch --array=0-4 --export=ALL,DATASET=lucchi,TUNING_MODE=lora \
+#          slurm/em/grid_em_openclip_large.sbatch
 
 extends: defaults
 
 # ---- I/O ----
-train_img_dir: "${data_root}/EM/Lucchi++/Train_In"
+train_img_dir:  "${data_root}/EM/Lucchi++/Train_In"
 train_mask_dir: "${data_root}/EM/Lucchi++/Train_Out"
-test_img_dir:    "${data_root}/EM/Lucchi++/Test_In"
-test_mask_dir:   "${data_root}/EM/Lucchi++/Test_Out"
+test_img_dir:   "${data_root}/EM/Lucchi++/Test_In"
+test_mask_dir:  "${data_root}/EM/Lucchi++/Test_Out"
 
-# results + experiment naming
-experiment_id: "2026-01-26_lucchi_openclip_vitl14_NOlora-r16_seg"
-results_root: "${results_root}/openclip"
-task_type: "seg/lucchi-fullft"
+# ---- results ----
+# The sweep overrides experiment_id and task_type per (regime, seed); these are the
+# values a bare `python scripts/train_em_seg.py --cfg <this>` would use.
+experiment_id: "2026-09-23_em_lucchi_openclip_vitl14_seg"
+results_root: "${scratch_root}/openclip"
+task_type: "seg/lucchi"
+modality: em
 
 dataset:
   type: lucchi
@@ -25,29 +33,30 @@ dataset:
 backbone:
   name: openclip
   model: "ViT-L-14"
-  pretrained: "laion2b_s32b_b82k"
+  variant: "ViT-L-14"
+  pretrained: "laion2b_s32b_b82k"   # the ViT-L-14 LAION-2B tag; ViT-H-14 uses b79k
   weights: ""
   preprocess:
     preset: em
 dino_size: "ViT-L-14"
 img_size:
   mode: longest_edge
-  target: 1022
+  target: 1022          # largest multiple of 14 that stays <= 1024
   patch_multiple: 14
   rounding: floor
 num_classes: 2
 
 # ---- LoRA ----
-use_lora: false
-full_finetune: true
+# Rank 16 / alpha 32 for every OpenCLIP run, EM and otherwise; the DINOv2 and DINOv3
+# DeepBacs and MoNuSAC runs use 8/16. Stated here so the value is visible in the run's
+# config_used.yaml rather than inherited silently.
+lora_rank: 16
+lora_alpha: 32
 lora:
-  enabled: false
   target_policy: vit_attention_only
   layer_selection: all
   exclude: [head, decoder, seg_head]
   compatibility_mode: true
-
-full_finetune: true
 
 # ---- loss (Dice) ----
 class_weights: [1.0, 15.0]

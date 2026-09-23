@@ -1,0 +1,60 @@
+# Environment: cluster (UZH Science) — joint EM (VNC + Lucchi++ + Kasthuri++),
+# OpenCLIP ViT-L-14. Mirrors triplet_resnet50_fullft_cluster.yaml and
+# paired_dinov3_cluster.yaml; only the backbone block differs.
+#
+# NOTE: per-source metrics are switched on by the substring "triplet" appearing in
+# train_img_dir / test_img_dir / experiment_id / task_type (see
+# dino_peft.utils.sample_groups.infer_expected_group_count). Both the data paths and
+# task_type below carry it, and the sweep keeps it in the experiment_id too. Without
+# it, metrics.json holds ONE pooled IoU and the per-dataset foreground IoU this
+# experiment reports is silently absent.
+
+extends: defaults
+
+# ---- I/O ----
+train_img_dir:  "${data_root}/EM/TRIPLET/train/images"
+train_mask_dir: "${data_root}/EM/TRIPLET/train/masks"
+test_img_dir:   "${data_root}/EM/TRIPLET/test/images"
+test_mask_dir:  "${data_root}/EM/TRIPLET/test/masks"
+
+# ---- results ----
+experiment_id: "2026-09-23_em_triplet_openclip_vitl14_seg"
+results_root: "${scratch_root}/openclip"
+task_type: "seg/triplet"
+modality: em
+
+# the stitched dataset already shares a naming scheme between images and masks
+dataset:
+  type: paired
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+backbone:
+  name: openclip
+  model: "ViT-L-14"
+  variant: "ViT-L-14"
+  pretrained: "laion2b_s32b_b82k"
+  weights: ""
+  preprocess:
+    preset: em
+dino_size: "ViT-L-14"
+img_size:
+  mode: longest_edge
+  target: 1022
+  patch_multiple: 14
+  rounding: floor
+num_classes: 2
+
+# ---- LoRA ----
+lora_rank: 16
+lora_alpha: 32
+lora:
+  target_policy: vit_attention_only
+  layer_selection: all
+  exclude: [head, decoder, seg_head]
+  compatibility_mode: true
+
+# ---- loss (Dice) ----
+class_weights: [1.0, 15.0]

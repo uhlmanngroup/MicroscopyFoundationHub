@@ -1,18 +1,24 @@
-# Environment: cluster (UZH Science) - DeepBacs single dataset
+# Environment: cluster (UZH Science) — DeepBacs single species, OpenCLIP ViT-L-14.
+#
+# Regime-agnostic base. The sweep overrides the four data directories per species
+# (coli | aureus | subtilis) and passes --tuning-mode head|lora|fullft, so this file
+# only has to describe what is the same for all nine cells:
+#   sbatch --array=0-4 --export=ALL,DATASET=subtilis,TUNING_MODE=lora \
+#          slurm/deepbacs/grid_deepbacs_openclip_large.sbatch
 
 extends: defaults
 
-# ---- I/O ----
-train_img_dir: "${data_root}/deepbacs/single/subtilis/train/images"
+# ---- I/O ---- (subtilis by default; the sweep rewrites these)
+train_img_dir:  "${data_root}/deepbacs/single/subtilis/train/images"
 train_mask_dir: "${data_root}/deepbacs/single/subtilis/train/masks"
-test_img_dir: "${data_root}/deepbacs/single/subtilis/test/images"
-test_mask_dir: "${data_root}/deepbacs/single/subtilis/test/masks"
+test_img_dir:   "${data_root}/deepbacs/single/subtilis/test/images"
+test_mask_dir:  "${data_root}/deepbacs/single/subtilis/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_subtilis_openclip_vitl14_lora_seg"
-results_root: "${results_root}/openclip"
-task_type: "seg/single/subtilis-lora"
-modality: "deepbacs"
+experiment_id: "2026-09-23_deepbacs_subtilis_openclip_vitl14_seg"
+results_root: "${scratch_root}/openclip"
+task_type: "seg/single/subtilis"
+modality: deepbacs
 
 dataset:
   type: paired
@@ -24,20 +30,23 @@ dataset:
 backbone:
   name: openclip
   model: "ViT-L-14"
+  variant: "ViT-L-14"
   pretrained: "laion2b_s32b_b82k"
   weights: ""
   preprocess:
     preset: em
 dino_size: "ViT-L-14"
+# DeepBacs keeps native resolution; defaults.yaml applies the paired 448x448 center
+# crop, which is 32x32 patches at patch size 14 -> 448 is a multiple of 14.
 img_size:
   mode: native
 num_classes: 2
 
-# ---- fine-tuning ----
-use_lora: true
-full_finetune: false
+# ---- LoRA ----
+# 16/32 for every OpenCLIP run; the DINOv2 and DINOv3 DeepBacs runs use 8/16.
+lora_rank: 16
+lora_alpha: 32
 lora:
-  enabled: true
   target_policy: vit_attention_only
   layer_selection: all
   exclude: [head, decoder, seg_head]

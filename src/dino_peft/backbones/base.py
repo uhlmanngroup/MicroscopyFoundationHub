@@ -101,4 +101,8 @@ def patch_tokens_to_grid(output: BackboneOutput) -> torch.Tensor:
         raise ValueError(
             f"Patch token count {tokens} does not match grid {output.grid_size}."
         )
-    return output.patch_tokens.transpose(1, 2).reshape(bsz, dim, grid_h, grid_w)
+    # .contiguous(): the reshape above returns a VIEW (the strides happen to allow it),
+    # and a strided NCHW tensor makes the MPS conv2d backend raise. CUDA and CPU accept
+    # it, so this only shows up when debugging locally on a Mac — which is exactly when
+    # it is most confusing. One copy of a feature map is negligible next to the ViT.
+    return output.patch_tokens.transpose(1, 2).reshape(bsz, dim, grid_h, grid_w).contiguous()

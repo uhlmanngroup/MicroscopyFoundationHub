@@ -13,6 +13,10 @@ Notes:
 
 ## Analysis And Reporting
 - `scripts/analysis/summarize_seg_results.py`: aggregate run metrics into CSV/JSON
+- `scripts/utils/prefetch_openclip.py`: download an OpenCLIP checkpoint once, before a
+  sweep fans out and 30 jobs race for the same cache entry
+- `scripts/utils/send_summary_email.py`: format that aggregate as a readable digest and
+  mail it; flags cells with fewer repeats than expected. Used by `slurm/openclip_summary.sbatch`
 - `scripts/analysis/plot_seg_summary.py`: generate summary plots from aggregates
 - `scripts/analysis/compare_ood_runs.py`: compare multiple OOD runs
 - `scripts/analysis/fancy_plot.py`: generate the Lucchi++ comparison figure

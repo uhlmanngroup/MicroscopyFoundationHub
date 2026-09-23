@@ -53,8 +53,8 @@ archive_slurm_log() {
 
   if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
     for candidate in \
-      "${log_dir}/${SLURM_JOB_NAME}-${SLURM_ARRAY_JOB_ID:-}_${SLURM_ARRAY_TASK_ID}.out" \
-      "${log_dir}/${SLURM_JOB_NAME}-${SLURM_JOB_ID:-}_${SLURM_ARRAY_TASK_ID}.out"; do
+      "${log_dir}/${SLURM_JOB_NAME:-job}-${SLURM_ARRAY_JOB_ID:-}_${SLURM_ARRAY_TASK_ID}.out" \
+      "${log_dir}/${SLURM_JOB_NAME:-job}-${SLURM_JOB_ID:-}_${SLURM_ARRAY_TASK_ID}.out"; do
       [ -f "$candidate" ] && { src="$candidate"; break; }
     done
   fi

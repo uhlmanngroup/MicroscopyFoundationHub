@@ -1,8 +1,12 @@
 # Example backbone block for OpenCLIP (open-clip-torch).
+#
+# The pretrained tag is model-specific: ViT-L-14 is laion2b_s32b_b82k and
+# ViT-H-14 is laion2b_s32b_b79k. Pairing a model with the other one's tag makes
+# open_clip.create_model raise, so keep the two lines in step.
 backbone:
   name: openclip
   model: "ViT-L-14"
-  pretrained: "laion2b_s32b_b79k"
+  pretrained: "laion2b_s32b_b82k"
   weights: ""
   preprocess:
     preset: em

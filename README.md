@@ -112,6 +112,56 @@ sbatch --array=0-4 --export=ALL,DATASET=subtilis,TUNING_MODE=lora \
 Common variables: `DATASET` / `COMBO`, `TUNING_MODE` (`head` | `lora` | `fullft`), `REPEATS`,
 `BASE_SEED`, `BASE_SPLIT_SEED`, `BASE_CFG`.
 
+Seeds are shared across backbones on purpose — every sweep runs seeds 1–5 with split_seeds
+101–105 — so a DINOv3-minus-OpenCLIP difference is not also a difference of train/val split.
+
+### One backbone, end to end
+
+`slurm/submit_openclip_all.sh` submits a whole backbone's benchmark and queues a summary job
+behind it, so the sweep reports itself:
+
+```bash
+NOTIFY_EMAIL=you@example.org bash slurm/submit_openclip_all.sh
+DRY_RUN=1 bash slurm/submit_openclip_all.sh     # print what it would submit
+```
+
+That is 20 array jobs / 100 tasks: EM (Lucchi++, Kasthuri++, VNC, joint triplet), DeepBacs
+(*E. coli*, *S. aureus*, *B. subtilis*, joint triplet) and MoNuSAC (epithelial, lymphocyte),
+each × 2 regimes × 5 seeds. The two regimes are **frozen** and **end-to-end** — the OpenCLIP
+sweep leaves LoRA out, and `MODES="head fullft lora"` puts it back without any other change.
+Narrow it further with `DOMAINS="em monusac"`, or submit one domain at a time with
+`slurm/{em,deepbacs,monusac}/submit_*_openclip.sh`.
+
+Before committing the whole sweep, `slurm/pilot_openclip.sh` runs six five-epoch jobs —
+EM triplet, DeepBacs triplet and MoNuSAC epithelial, frozen and end-to-end — into a
+throwaway `<scratch_root>/openclip-pilot` tree:
+
+```bash
+bash slurm/pilot_openclip.sh            # submit
+bash slurm/pilot_openclip.sh --report   # read it back when they finish
+```
+
+Every run records `peak_gpu_mem_gib` and `train_seconds_per_epoch` in `metrics.json`, so
+the report answers whether end-to-end fits in GPU memory and how long a full run will take
+from measurements rather than an estimate. It also shows, for the two joint runs, which
+per-source names came out — an empty column there means the per-dataset breakdown is not
+being produced and the sweep is not ready.
+
+The summary job depends on all of them with `afterany` — a sweep with two crashed cells still
+produces a report naming them — runs `summarize_seg_results.py` over the whole backbone tree,
+and mails the digest. Cells with fewer than five repeats are flagged. It is also fine to run
+on its own at any point:
+
+```bash
+sbatch --export=ALL,NOTIFY_EMAIL=you@example.org slurm/openclip_summary.sbatch
+```
+
+The **joint** runs (EM triplet, DeepBacs triplet) report a per-source foreground IoU alongside
+the pooled one. That breakdown is switched on by the substring `triplet` appearing in the run's
+data paths, `task_type` or `experiment_id` — the configs and sweeps all carry it, but it is
+worth knowing before renaming anything, because losing it removes the per-dataset numbers
+silently rather than failing.
+
 **Before your first submission,** edit the cluster-specific paths at the top of each
 `grid_*.sbatch` — `PY`, `DATA_ROOT`, `RESULTS_ROOT`, and the DINOv3 `WEIGHTS` location. The
 configs under `configs/cluster/` likewise carry absolute paths from the original machines.

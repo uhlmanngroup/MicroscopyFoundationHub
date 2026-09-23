@@ -1,0 +1,53 @@
+# Environment: cluster (UZH Science) — MoNuSAC epithelial, OpenCLIP ViT-L-14.
+#
+# Regime-agnostic base; the sweep passes --tuning-mode head|lora|fullft:
+#   sbatch --array=0-4 --export=ALL,DATASET=epithelial,TUNING_MODE=lora \
+#          slurm/monusac/grid_monusac_openclip_large.sbatch
+
+extends: defaults
+
+# ---- I/O ----
+train_img_dir:  "${data_root}/monusac_448/epithelial/train/images"
+train_mask_dir: "${data_root}/monusac_448/epithelial/train/masks"
+test_img_dir:   "${data_root}/monusac_448/epithelial/test/images"
+test_mask_dir:  "${data_root}/monusac_448/epithelial/test/masks"
+
+# ---- results ----
+experiment_id: "2026-09-23_monusac_epithelial_openclip_vitl14_seg"
+results_root: "${scratch_root}/openclip"
+task_type: "seg/epithelial"
+modality: monusac
+
+dataset:
+  type: paired
+  params:
+    pair_mode: stem
+    recursive: false
+
+# ---- model / backbone ----
+backbone:
+  name: openclip
+  model: "ViT-L-14"
+  variant: "ViT-L-14"
+  pretrained: "laion2b_s32b_b82k"
+  weights: ""
+  preprocess:
+    preset: em
+dino_size: "ViT-L-14"
+# MoNuSAC keeps native resolution; defaults.yaml applies the paired 448x448 center
+# crop (a multiple of the 14 px patch). scripts/data/prepare_monusac_448.py must have
+# been run first, which is what makes ${data_root}/monusac_448 exist.
+img_size:
+  mode: native
+num_classes: 2
+
+# ---- LoRA ----
+# 16/32 for every OpenCLIP run. The DINOv3 MoNuSAC runs use 8/16, so the LoRA rows are
+# not rank-matched across backbones here; see the README note.
+lora_rank: 16
+lora_alpha: 32
+lora:
+  target_policy: vit_attention_only
+  layer_selection: all
+  exclude: [head, decoder, seg_head]
+  compatibility_mode: true

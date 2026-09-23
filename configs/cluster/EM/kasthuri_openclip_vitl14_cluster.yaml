@@ -1,26 +1,30 @@
-# Environment: cluster (UZH Science) — Drosophila VNC only, OpenCLIP ViT-L-14.
+# Environment: cluster (UZH Science) — Kasthuri++ only, OpenCLIP ViT-L-14.
 #
 # Regime-agnostic base; the sweep supplies --tuning-mode head|lora|fullft.
+# Supersedes kasthuri_openclip_vitl14_{head,lora,fullft}_cluster.yaml, which encoded
+# one regime each and predate configs/defaults.yaml.
 
 extends: defaults
 
 # ---- I/O ----
-train_img_dir:  "${data_root}/EM/Droso/Train_In"
-train_mask_dir: "${data_root}/EM/Droso/Train_Out"
-test_img_dir:   "${data_root}/EM/Droso/Test_In"
-test_mask_dir:  "${data_root}/EM/Droso/Test_Out"
+train_img_dir:  "${data_root}/EM/Kasthuri++/Train_In"
+train_mask_dir: "${data_root}/EM/Kasthuri++/Train_Out"
+test_img_dir:   "${data_root}/EM/Kasthuri++/Test_In"
+test_mask_dir:  "${data_root}/EM/Kasthuri++/Test_Out"
 
 # ---- results ----
-experiment_id: "2026-09-23_em_droso_openclip_vitl14_seg"
+experiment_id: "2026-09-23_em_kasthuri_openclip_vitl14_seg"
 results_root: "${scratch_root}/openclip"
-task_type: "seg/droso"
+task_type: "seg/kasthuri"
 modality: em
 
-# drosophila images share numeric stems with their masks
+# Kasthuri follows Lucchi-style pairing (numeric stems; no image prefix)
 dataset:
-  type: droso
+  type: lucchi
   params:
-    recursive: true
+    recursive: false
+    image_prefix: ""
+    zfill_width: 4
 
 # ---- model / backbone ----
 backbone:
@@ -38,10 +42,6 @@ img_size:
   patch_multiple: 14
   rounding: floor
 num_classes: 2
-
-# ---- training ----
-# VNC is the smallest EM set; head and LoRA fit at 4. The sweep drops fullft to 1.
-batch_size: 4
 
 # ---- LoRA ----
 lora_rank: 16

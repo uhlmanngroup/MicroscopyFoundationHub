@@ -55,10 +55,11 @@ Configs that do not train — feature extraction, PCA, OOD, domain analysis — 
 
 ## 3. Seeds are never implicit
 
-`defaults.yaml` deliberately sets no `seed`. A training config without one still
-falls back to seed 0, but now prints a loud warning, because silently seeding
-every repetition identically once produced a set of "repeats" with zero variance.
-Sweep scripts pass `--seed` per repetition.
+`defaults.yaml` deliberately sets no `seed`. A training config without one is a
+hard error from `SegTrainer`, because silently seeding every repetition at 0 once
+produced a set of "repeats" with zero variance. Sweep scripts pass `--seed` and
+`--split-seed` per repetition; the current sweeps use seeds 1-5 with split_seeds
+101-105, and every backbone reuses those so the comparison is paired.
 
 ## Directory map
 

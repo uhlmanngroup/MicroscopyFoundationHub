@@ -1,18 +1,26 @@
-# Environment: cluster (UZH Science) - DeepBacs triplet dataset
+# Environment: cluster (UZH Science) — joint DeepBacs (E. coli + S. aureus +
+# B. subtilis), OpenCLIP ViT-L-14.
+#
+# NOTE: per-species metrics are switched on by the substring "triplet" appearing in
+# train_img_dir / test_img_dir / experiment_id / task_type (see
+# dino_peft.utils.sample_groups.infer_expected_group_count), after which the species
+# are separated by filename stem. Both the data paths and task_type below carry it,
+# and the sweep keeps it in the experiment_id. Without it, metrics.json holds ONE
+# pooled IoU and the per-species foreground IoU is silently absent.
 
 extends: defaults
 
 # ---- I/O ----
-train_img_dir: "${data_root}/deepbacs/triplet/train/images"
+train_img_dir:  "${data_root}/deepbacs/triplet/train/images"
 train_mask_dir: "${data_root}/deepbacs/triplet/train/masks"
-test_img_dir: "${data_root}/deepbacs/triplet/test/images"
-test_mask_dir: "${data_root}/deepbacs/triplet/test/masks"
+test_img_dir:   "${data_root}/deepbacs/triplet/test/images"
+test_mask_dir:  "${data_root}/deepbacs/triplet/test/masks"
 
 # ---- results ----
-experiment_id: "2026-03-03_deepbacs_triplet_openclip_vitl14_lora_seg"
-results_root: "${results_root}/openclip"
-task_type: "seg/triplet/coli-aureus-subtilis-lora"
-modality: "deepbacs"
+experiment_id: "2026-09-23_deepbacs_triplet_openclip_vitl14_seg"
+results_root: "${scratch_root}/openclip"
+task_type: "seg/triplet/coli-aureus-subtilis"
+modality: deepbacs
 
 dataset:
   type: paired
@@ -24,6 +32,7 @@ dataset:
 backbone:
   name: openclip
   model: "ViT-L-14"
+  variant: "ViT-L-14"
   pretrained: "laion2b_s32b_b82k"
   weights: ""
   preprocess:
@@ -33,11 +42,10 @@ img_size:
   mode: native
 num_classes: 2
 
-# ---- fine-tuning ----
-use_lora: true
-full_finetune: false
+# ---- LoRA ----
+lora_rank: 16
+lora_alpha: 32
 lora:
-  enabled: true
   target_policy: vit_attention_only
   layer_selection: all
   exclude: [head, decoder, seg_head]

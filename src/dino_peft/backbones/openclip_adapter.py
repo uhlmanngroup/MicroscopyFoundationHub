@@ -118,6 +118,38 @@ def _shape_tokens(tokens: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
     return tokens
 
 
+def interpolate_pos_embed(
+    pos: torch.Tensor,
+    target_grid: tuple[int, int],
+    num_prefix_tokens: int,
+) -> torch.Tensor:
+    """Resample a (1, T, C) positional embedding onto ``target_grid``.
+
+    Unlike :meth:`OpenCLIPAdapter._maybe_resize_pos_embed`, this does not touch the
+    parameter: it returns a new tensor built by autograd ops, so a trainable
+    ``positional_embedding`` still receives gradients under full fine-tuning.
+    """
+    if pos.dim() != 3:
+        raise ValueError(f"Expected a (1, T, C) positional embedding, got {tuple(pos.shape)}")
+    num_prefix_tokens = max(0, int(num_prefix_tokens))
+    prefix = pos[:, :num_prefix_tokens, :]
+    patches = pos[:, num_prefix_tokens:, :]
+
+    n_patches = patches.shape[1]
+    side = int(round(sqrt(n_patches)))
+    if side * side != n_patches:
+        raise ValueError(
+            f"Positional embedding holds {n_patches} patch tokens, which is not a square grid; "
+            "cannot resample it for a different input size."
+        )
+
+    channels = patches.shape[-1]
+    patches = patches.reshape(1, side, side, channels).permute(0, 3, 1, 2)
+    patches = F.interpolate(patches, size=tuple(target_grid), mode="bicubic", align_corners=False)
+    patches = patches.permute(0, 2, 3, 1).reshape(1, target_grid[0] * target_grid[1], channels)
+    return torch.cat([prefix, patches], dim=1) if num_prefix_tokens else patches
+
+
 class OpenCLIPAdapter(BackboneAdapter):
     def __init__(
         self,
@@ -143,6 +175,7 @@ class OpenCLIPAdapter(BackboneAdapter):
         self._pos_embed_base = None
         self._pos_embed_base_grid = None
         self._pos_embed_cache = {}
+        self._logged_interp_grids = set()
         self.to(device_obj)
         self.eval()
 
@@ -309,6 +342,17 @@ class OpenCLIPAdapter(BackboneAdapter):
         info["tensor"] = new_tensor
 
     def _get_tokens(self, x: torch.Tensor) -> Optional[torch.Tensor]:
+        # Preferred path for a standard OpenCLIP ViT tower: run it by hand. It is
+        # bit-exact with open_clip's own _embeds -> transformer -> ln_post, it accepts
+        # any input size, and — unlike the introspection below — it is the same code in
+        # every adaptation regime, so frozen, LoRA and end-to-end runs compare features
+        # produced identically. The fallbacks remain for non-ViT visual towers.
+        tokens = self._manual_vit_tokens(x)
+        if tokens is not None:
+            return tokens
+
+        self._maybe_resize_pos_embed(x)
+
         if hasattr(self.model, "forward_features"):
             try:
                 fn = self.model.forward_features
@@ -377,43 +421,76 @@ class OpenCLIPAdapter(BackboneAdapter):
             if tokens is not None:
                 return tokens
 
-        tokens = self._manual_vit_tokens(x)
-        if tokens is not None:
-            return tokens
         return None
 
-    def _manual_vit_tokens(self, x: torch.Tensor) -> Optional[torch.Tensor]:
+    def _manual_vit_tokens(self, image: torch.Tensor) -> Optional[torch.Tensor]:
+        """Run the OpenCLIP visual tower by hand and return every token.
+
+        Mirrors ``VisionTransformer._embeds`` + ``transformer`` + ``ln_post``. We do
+        this rather than call the tower, because the tower adds ``positional_embedding``
+        at its pretrained grid and so rejects any other input size, which is every size
+        we train at.
+        """
         required = ("conv1", "class_embedding", "positional_embedding", "ln_pre", "transformer")
         if not all(hasattr(self.model, attr) for attr in required):
             return None
         model = self.model
-        try:
-            x = model.conv1(x)
-            x = x.reshape(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
-            cls = model.class_embedding
-            if cls.dim() == 1:
-                cls = cls.unsqueeze(0)
-            cls = cls.to(dtype=x.dtype, device=x.device)
-            cls = cls.expand(x.shape[0], 1, -1)
-            x = torch.cat([cls, x], dim=1)
-            pos = model.positional_embedding
-            if pos is not None:
-                if pos.dim() == 2:
-                    pos = pos.unsqueeze(0)
-                if pos.shape[1] == x.shape[1]:
-                    x = x + pos.to(dtype=x.dtype, device=x.device)
-            x = model.ln_pre(x)
+
+        x = model.conv1(image)
+        x = x.reshape(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
+        cls = model.class_embedding
+        if cls.dim() == 1:
+            cls = cls.unsqueeze(0)
+        cls = cls.to(dtype=x.dtype, device=x.device)
+        cls = cls.expand(x.shape[0], 1, -1)
+        x = torch.cat([cls, x], dim=1)
+
+        pos = model.positional_embedding
+        if pos is not None:
+            if pos.dim() == 2:
+                pos = pos.unsqueeze(0)
+            if pos.shape[1] != x.shape[1]:
+                # Full fine-tuning takes this branch: _maybe_resize_pos_embed leaves a
+                # trainable pos_embed at its pretrained grid, so it has to be resampled
+                # here instead — differentiably, every forward. Skipping the term on a
+                # shape mismatch (what this did before) silently trained the ViT with no
+                # positional information at all.
+                grid_h, grid_w = infer_grid_size(image, self.patch_size)
+                num_prefix = x.shape[1] - grid_h * grid_w
+                if (grid_h, grid_w) not in self._logged_interp_grids:
+                    self._logged_interp_grids.add((grid_h, grid_w))
+                    print(
+                        f"[openclip] interpolating pos_embed -> {grid_h}x{grid_w} "
+                        f"(prefix tokens: {num_prefix})"
+                    )
+                pos = interpolate_pos_embed(
+                    pos,
+                    target_grid=(grid_h, grid_w),
+                    num_prefix_tokens=num_prefix,
+                )
+            x = x + pos.to(dtype=x.dtype, device=x.device)
+
+        patch_dropout = getattr(model, "patch_dropout", None)
+        if patch_dropout is not None:
+            x = patch_dropout(x)
+        x = model.ln_pre(x)
+
+        # open-clip >= 2.24 runs its transformer batch-first and no longer transposes.
+        # Permuting unconditionally (what this did before) handed the blocks an
+        # (L, B, D) tensor read as B=L sequences of length 1, so attention mixed NO
+        # tokens: the ViT collapsed to a per-patch MLP, silently and at full speed.
+        batch_first = bool(getattr(model.transformer, "batch_first", False))
+        if not batch_first:
             x = x.permute(1, 0, 2)
-            x = model.transformer(x)
+        x = model.transformer(x)
+        if not batch_first:
             x = x.permute(1, 0, 2)
-            if hasattr(model, "ln_post"):
-                x = model.ln_post(x)
-            return _shape_tokens(x)
-        except Exception:
-            return None
+
+        if hasattr(model, "ln_post"):
+            x = model.ln_post(x)
+        return _shape_tokens(x)
 
     def forward(self, x: torch.Tensor) -> BackboneOutput:
-        self._maybe_resize_pos_embed(x)
         grid_h, grid_w = infer_grid_size(x, self.patch_size)
         num_patches = grid_h * grid_w
 

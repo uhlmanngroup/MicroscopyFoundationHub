@@ -13,6 +13,9 @@ Notes:
 
 ## Analysis And Reporting
 - `scripts/analysis/summarize_seg_results.py`: aggregate run metrics into CSV/JSON
+- `scripts/utils/check_sample_groups.py`: for a joint (paired/triplet) run, show which
+  files the per-source metrics will group together and under what name — before spending
+  GPU hours on a breakdown of the wrong three things
 - `scripts/utils/prefetch_openclip.py`: download an OpenCLIP checkpoint once, before a
   sweep fans out and 30 jobs race for the same cache entry
 - `scripts/utils/send_summary_email.py`: format that aggregate as a readable digest and

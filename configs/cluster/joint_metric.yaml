@@ -1,0 +1,53 @@
+# One config for every collection/backbone. Existing training configs provide
+# dataset pairing, image geometry and pretrained weights; no training is run.
+results_root: ${results_root}/joint_metric
+cache_root: ${scratch_root}/joint_metric/cache
+seed: 42
+
+backbones:
+  dinov3: configs/cluster/EM/kasthuri_dinov3_lora_cluster.yaml # ViT-L/16
+  resnet50: configs/cluster/EM/lucchi_resnet50_fullft_cluster.yaml
+  openclip: configs/cluster/EM/lucchi_openclip_vitl14_cluster.yaml
+
+collections:
+  em:
+    datasets:
+      - {id: lucchi, training_cfg: configs/cluster/EM/lucchi_resnet50_fullft_cluster.yaml}
+      - {id: kasthuri, training_cfg: configs/cluster/EM/kasthuri_resnet50_fullft_cluster.yaml}
+      - {id: vnc, training_cfg: configs/cluster/EM/droso_resnet50_fullft_cluster.yaml}
+  deepbacs:
+    training_cfg: configs/cluster/deepbacs/deepbacs_single_dinov3_cluster.yaml
+    preprocessing: {img_size: {mode: native}, center_crop_size: 448}
+    datasets:
+      - id: coli
+        image_dir: ${data_root}/deepbacs/single/coli/train/images
+        mask_dir: ${data_root}/deepbacs/single/coli/train/masks
+      - id: aureus
+        image_dir: ${data_root}/deepbacs/single/aureus/train/images
+        mask_dir: ${data_root}/deepbacs/single/aureus/train/masks
+      - id: subtilis
+        image_dir: ${data_root}/deepbacs/single/subtilis/train/images
+        mask_dir: ${data_root}/deepbacs/single/subtilis/train/masks
+
+extraction:
+  device: cuda
+  preview_samples: 3
+
+metric:
+  tau_fg: 0.8
+  tau_bg: 0.2
+  n_samples_per_distribution: 512
+  min_samples_per_distribution: 16
+  seed: 42
+  l2_normalize: true
+  ot_epsilon: 0.05
+  barycenter_support: 64
+  barycenter_max_iterations: 100
+  risk_formula: ratio
+  risk_epsilon: 1.0e-8
+  # Optional: pca_dim, sinkhorn_scaling, barycenter_tolerance, device, dtype.
+  # Their defaults live in MetricConfig, rather than being repeated here.
+
+# Applied only with --sensitivity. Add other metric.<field>: [values] axes here.
+sweep:
+  metric.seed: [1, 2, 3]

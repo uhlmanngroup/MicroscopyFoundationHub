@@ -196,6 +196,22 @@ Fréchet-distance domain analysis, and result aggregation — see
 [`scripts/README.md`](scripts/README.md) for all entrypoints and
 [`configs/README.md`](configs/README.md) for the configuration map.
 
+## Joint-training compatibility diagnostic
+
+Frozen spatial features and mask occupancy are cached once; the metric and risk
+formula can then change without rerunning the backbone. Results include offline
+HTML navigation, per-dataset components, CSVs and plots.
+
+```bash
+pip install -e '.[joint-metric]'
+python scripts/joint_metric.py submit --dry-run
+python scripts/joint_metric.py submit   # DINOv3 + EM; use selectors for other runs
+```
+
+One shared [config](configs/cluster/joint_metric.yaml) covers all backbones and
+collections. See [the run guide](docs/joint_training_metric.md) for stages,
+cluster paths, sensitivity sweeps and interpretation.
+
 ## Citation
 
 If you use this work, please cite the preprint

@@ -1,19 +1,21 @@
 # Joint-training compatibility
 
 The pipeline has one configuration (`configs/cluster/joint_metric.yaml`), one
-command (`scripts/joint_metric.py`), and one SLURM job template. The configuration
+analysis command (`scripts/joint_metric.py`), a small bash submitter, and one SLURM
+job template. The configuration
 references existing training YAMLs for dataset pairing, image geometry and
 pretrained backbone weights. It does not run their training or LoRA settings.
 
 ## Run on the cluster
 
-From the repository, in the existing `dino-peft` environment:
+From the repository on the cluster, install the extra dependency once in the
+existing `dino-peft` environment, then submit through bash:
 
 ```bash
 pip install -e '.[joint-metric]'
-python scripts/joint_metric.py submit --dry-run
-python scripts/joint_metric.py submit                 # DINOv3 + EM first
-python scripts/joint_metric.py submit --collection all --backbone all
+bash slurm/submit_joint_metric.sh --dry-run
+bash slurm/submit_joint_metric.sh                 # DINOv3 + EM first
+bash slurm/submit_joint_metric.sh --collection all --backbone all
 ```
 
 The selectors are `em` / `deepbacs` and `dinov3` / `resnet50` / `openclip`.
@@ -24,8 +26,10 @@ has 32 GiB RAM and 8 CPUs; extraction gets 12 hours, metrics 8 hours. These limi
 have not been benchmarked on the cluster. Submission records and logs share a
 timestamped directory under the persistent report root. No email is sent.
 
-The existing `slurm/lib/common.sh` provides cluster/environment setup. Jobs use
-the Python interpreter that submitted them. Optional scheduler overrides are
+The bash entry point uses the existing `slurm/lib/common.sh` interpreter setting:
+`$HOME/data/conda/envs/dino-peft/bin/python`, overridable with `PY`. Jobs use that
+same interpreter. The submitter only calls `sbatch` on the login node; extraction
+and metric computation run in scheduled jobs. Optional scheduler overrides are
 `JOINT_METRIC_GPU`, `JOINT_METRIC_CONSTRAINT`, and `JOINT_METRIC_PARTITION`.
 
 Paths continue to come from `configs/paths.yaml`, honoring `DINO_PEFT_*` overrides:
@@ -54,7 +58,7 @@ python scripts/joint_metric.py compute --collection em --backbone dinov3
 python scripts/joint_metric.py compute --datasets lucchi vnc   # a pair
 
 # Sampling seeds or other Cartesian-product axes from the config's sweep block.
-python scripts/joint_metric.py submit --metrics-only --sensitivity
+bash slurm/submit_joint_metric.sh --metrics-only --sensitivity
 python scripts/joint_metric.py compute --sensitivity
 
 # C: change only the risk equation; no backbone inference or OT computation.

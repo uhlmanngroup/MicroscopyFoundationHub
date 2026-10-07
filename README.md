@@ -204,8 +204,8 @@ HTML navigation, per-dataset components, CSVs and plots.
 
 ```bash
 pip install -e '.[joint-metric]'
-python scripts/joint_metric.py submit --dry-run
-python scripts/joint_metric.py submit   # DINOv3 + EM; use selectors for other runs
+bash slurm/submit_joint_metric.sh --dry-run
+bash slurm/submit_joint_metric.sh   # DINOv3 + EM; use selectors for other runs
 ```
 
 One shared [config](configs/cluster/joint_metric.yaml) covers all backbones and

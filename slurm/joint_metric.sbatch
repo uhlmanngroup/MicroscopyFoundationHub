@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 
-# Submit through `python scripts/joint_metric.py submit`; the CLI selects GPU
+# Submit through `bash slurm/submit_joint_metric.sh`; the submitter selects GPU
 # resources only for extraction and places all logs in persistent result storage.
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"

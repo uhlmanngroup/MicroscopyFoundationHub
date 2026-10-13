@@ -12,6 +12,10 @@
 # Datasets. Expected to contain EM/, deepbacs/, monusac_448/, domain_shift/.
 data_root: /home/cfuste/data/datasets
 
+# Current EM source location for the joint-metric reports; kept separate from
+# data_root so other training collections retain their existing paths.
+joint_em_data_root: /home/cfuste/data/DINO-LoRA/datasets/EM
+
 # Run outputs on persistent cluster storage (/data survives, but is slower).
 results_root: /home/cfuste/data/DINO-LoRA
 

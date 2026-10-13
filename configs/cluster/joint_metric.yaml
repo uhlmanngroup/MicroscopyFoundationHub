@@ -12,9 +12,9 @@ backbones:
 collections:
   em:
     datasets:
-      - {id: lucchi, training_cfg: configs/cluster/EM/lucchi_resnet50_fullft_cluster.yaml}
-      - {id: kasthuri, training_cfg: configs/cluster/EM/kasthuri_resnet50_fullft_cluster.yaml}
-      - {id: vnc, training_cfg: configs/cluster/EM/droso_resnet50_fullft_cluster.yaml}
+      - {id: lucchi, training_cfg: configs/cluster/EM/lucchi_resnet50_fullft_cluster.yaml, image_dir: "${joint_em_data_root}/Lucchi++/Train_In", mask_dir: "${joint_em_data_root}/Lucchi++/Train_Out"}
+      - {id: kasthuri, training_cfg: configs/cluster/EM/kasthuri_resnet50_fullft_cluster.yaml, image_dir: "${joint_em_data_root}/Kasthuri++/Train_In", mask_dir: "${joint_em_data_root}/Kasthuri++/Train_Out"}
+      - {id: vnc, training_cfg: configs/cluster/EM/droso_resnet50_fullft_cluster.yaml, image_dir: "${joint_em_data_root}/Droso/Train_In", mask_dir: "${joint_em_data_root}/Droso/Train_Out"}
   deepbacs:
     training_cfg: configs/cluster/deepbacs/deepbacs_single_dinov3_cluster.yaml
     preprocessing: {img_size: {mode: native}, center_crop_size: 448}
@@ -36,6 +36,8 @@ extraction:
 metric:
   tau_fg: 0.8
   tau_bg: 0.2
+  background_sampling: near_foreground # Compare with previous all-background report.
+  near_foreground_radius_patches: 2 # A 5x5 neighborhood on each image's patch grid.
   n_samples_per_distribution: 512
   min_samples_per_distribution: 16
   seed: 42

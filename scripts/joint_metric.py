@@ -14,7 +14,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from dino_peft.config import load_config, repo_root
-from dino_peft.analysis.joint_run import resolve_experiment, run_from_config, recompute, expand_runs
+from dino_peft.analysis.joint_run import resolve_experiment, run_from_config, recompute, expand_runs, refresh_alignment_report
 from dino_peft.analysis.joint_metric import MetricConfig
 from dino_peft.analysis.joint_report import summarize_results
 
@@ -47,6 +47,15 @@ def submit(args, experiments):
                 writer.writerow(["stage", "collection", "backbone", "job_id"])
                 writer.writerows(records)
         return job_id
+
+    if args.previews_only:
+        if not args.components:
+            raise ValueError("--previews-only requires --components /path/to/run/components.json")
+        queue("previews", "all", "all", ["--cpus-per-task=2", "--mem=8G", "--time=00:30:00"],
+              ["previews", "--components", str(args.components.resolve()), "--cfg", str(args.cfg.resolve())])
+        print(f"Report to refresh: {args.components.parent / 'index.html'}")
+        print("Dry run: no jobs or directories created." if args.dry_run else f"Jobs and logs: {log_dir}")
+        return
 
     for collection, backbone, cfg in experiments:
         selectors = ["--cfg", str(args.cfg.resolve()), "--collection", collection, "--backbone", backbone]
@@ -88,6 +97,8 @@ def main():
         if action == "submit":
             p.add_argument("--metrics-only", action="store_true")
             p.add_argument("--dry-run", action="store_true")
+            p.add_argument("--previews-only", action="store_true")
+            p.add_argument("--components", type=Path, help="Existing run/components.json to repair")
     p = commands.add_parser("risk")
     p.add_argument("--components", required=True, type=Path)
     p.add_argument("--out-dir", required=True, type=Path)
@@ -97,12 +108,17 @@ def main():
     p.add_argument("--performance-csv")
     p = commands.add_parser("summary")
     p.add_argument("--results-root", type=Path, required=True)
+    p = commands.add_parser("previews")
+    p.add_argument("--components", required=True, type=Path)
+    p.add_argument("--cfg", type=Path, default=repo_root() / "configs/cluster/joint_metric.yaml")
     args = parser.parse_args()
     try:
         if args.action == "risk":
             recompute(args.components, args.out_dir, formula=args.formula, epsilon=args.epsilon, consensus=args.consensus, performance_csv=args.performance_csv)
         elif args.action == "summary":
             summarize_results(args.results_root)
+        elif args.action == "previews":
+            refresh_alignment_report(args.components, load_config(args.cfg))
         else:
             if not args.cfg.is_file():
                 raise FileNotFoundError(args.cfg)

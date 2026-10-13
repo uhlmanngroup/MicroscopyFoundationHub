@@ -12,9 +12,9 @@ import pytest
 import torch
 
 from dino_peft.config import load_config
-from dino_peft.analysis.joint_cache import _AlignedDataset, _resolve_sources, extract_joint_cache, occupancy_on_grid
-from dino_peft.analysis.joint_metric import MetricConfig, SinkhornDistance, compute_metric, fit_barycenter, risk_from_components, sample_indices, _transform_distributions
-from dino_peft.analysis.joint_run import recompute, resolve_experiment, run_one
+from dino_peft.analysis.joint_cache import _AlignedDataset, _resolve_sources, extract_joint_cache, load_cache_manifest, occupancy_on_grid
+from dino_peft.analysis.joint_metric import MetricConfig, SinkhornDistance, compute_metric, fit_barycenter, near_foreground_background, risk_from_components, sample_indices, _transform_distributions
+from dino_peft.analysis.joint_run import recompute, refresh_alignment_report, resolve_experiment, run_one, save_alignment_previews
 from dino_peft.analysis.joint_report import save_cloud_projection
 from dino_peft.backbones.base import BackboneOutput
 
@@ -50,6 +50,23 @@ def test_balanced_sampling_reproducibility_and_order(cfg):
             assert len(np.unique(a['indices'][dataset][kind])) == 8
     with pytest.raises(ValueError, match='background'):
         sample_indices({'a': np.ones(8), 'b': np.ones(8)}, cfg)
+
+
+def test_near_foreground_background_uses_each_image_grid(cfg):
+    q = np.array([1., 0., 0., 0.,
+                  0., 0., 0., 0.,
+                  0., 0., 0., 0.])
+    near = near_foreground_background(q, (3, 4), tau_fg=.8, tau_bg=.2, radius=1)
+    np.testing.assert_array_equal(np.flatnonzero(near), [1, 4, 5])
+    far = near_foreground_background(np.zeros(12), (3, 4), tau_fg=.8, tau_bg=.2, radius=1)
+    assert not far.any()  # A foreground patch in the previous image cannot leak in.
+    data = {'a': np.r_[q, np.zeros(12)], 'b': q.copy()}
+    masks = {'a': np.r_[near, far], 'b': near}
+    selected = sample_indices(data, replace(cfg, background_sampling='near_foreground'), near_background=masks)
+    assert selected['counts']['a']['n_background_all'] == 23
+    assert selected['counts']['a']['n_background'] == 3
+    assert selected['counts']['a']['n_sampled_background'] == 1
+    assert np.all(masks['a'][selected['indices']['a']['background']])
 
 
 def test_sinkhorn_cost_and_normalized_mass(cfg):
@@ -158,11 +175,36 @@ def test_cache_to_report_and_risk_only_reuse(tmp_path, cfg, monkeypatch):
     assert all(p['cache_occupancy_verified'] and p['near_black_pixel_fraction'] == .5 for p in result['alignment']['previews'])
     report = (output / 'index.html').read_text()
     assert 'src="data:image/png;base64,' in report and 'src="figs/' not in report
+    # The near-object run reuses frozen features. Missing source images still
+    # yield honest cached extraction triptychs instead of an empty section.
+    for name in ('a', 'b'):
+        (tmp_path / name).rename(tmp_path / f'{name}-moved')
+    manifest = load_cache_manifest(tmp_path / 'cache')
+    identities = json.loads((output / 'samples.json').read_text())['datasets']
+    relocated = {name: {'image_dir': str(tmp_path / f'{name}-moved'),
+                        'mask_dir': str(tmp_path / f'{name}-moved')} for name in ('a', 'b')}
+    repaired = save_alignment_previews(tmp_path / 'cache', manifest, manifest['datasets'], identities,
+                                       cfg, tmp_path / 'repaired-preview', relocated)
+    assert len(repaired['previews']) == 6 and not repaired['warnings']
+    assert all(p['relocated'] and p['cache_occupancy_verified'] for p in repaired['previews'])
+    near_experiment = {**experiment, 'metric': vars(replace(cfg, background_sampling='near_foreground', near_foreground_radius_patches=1))}
+    near_output = run_one(near_experiment)
+    near_result = json.loads((near_output / 'components.json').read_text())
+    assert all(row['n_background'] < row['n_background_all'] for row in near_result['per_dataset'])
+    assert near_result['config']['background_sampling'] == 'near_foreground'
+    assert len(near_result['alignment']['previews']) == 2
+    assert all(p['source'] == 'cache_preview' for p in near_result['alignment']['previews'])
+    assert 'saved during cache extraction' in (near_output / 'index.html').read_text()
     monkeypatch.setattr('dino_peft.analysis.joint_run.compute_metric', forbidden)
     assert run_one(experiment) == output
     recompute(output / 'components.json', tmp_path / 'alternative', formula='consensus')
     assert (tmp_path / 'alternative/cloud_projection.npz').read_bytes() == (output / 'cloud_projection.npz').read_bytes()
     assert len(list((tmp_path / 'alternative/figs/alignment').glob('*.png'))) == 6
+    refresh_alignment_report(output / 'components.json', {'collections': {}, 'backbones': {}})
+    refreshed = json.loads((output / 'components.json').read_text())
+    assert refreshed['collection']['G'] == result['collection']['G']
+    assert len(refreshed['alignment']['previews']) == 2
+    assert all(p['source'] == 'cache_preview' for p in refreshed['alignment']['previews'])
     with (tmp_path / 'cache/a/0000000.npz').open('ab') as f:
         f.write(b'corrupted')
     with pytest.raises(ValueError, match='checksum'):
@@ -179,8 +221,16 @@ def test_shared_config_and_cluster_dependencies(tmp_path):
             assert len(sources) == 3
             assert all(s['preprocessing']['binarize_threshold'] == (0 if collection == 'deepbacs' else 128) for s in sources)
             assert sources[0]['preprocessing']['img_size']['mode'] == ('native' if collection == 'deepbacs' else 'longest_edge')
+            if collection == 'em':
+                assert all('/DINO-LoRA/datasets/EM/' in s['image_dir'] for s in sources)
     # Dry-run never calls a scheduler, but exercises the exact submission builder.
     run = subprocess.run([sys.executable, 'scripts/joint_metric.py', 'submit', '--collection', 'all', '--backbone', 'all', '--dry-run'], check=True, text=True, capture_output=True)
     assert run.stdout.count('--parsable') == 13
     assert '--dependency=afterok:900000' in run.stdout
     assert '--dependency=afterany:900001:900003:900005:900007:900009:900011' in run.stdout
+    assert load_config('configs/cluster/joint_metric.yaml')['metric']['background_sampling'] == 'near_foreground'
+    preview = subprocess.run([sys.executable, 'scripts/joint_metric.py', 'submit', '--previews-only',
+                              '--components', str(tmp_path / 'components.json'), '--dry-run'],
+                             check=True, text=True, capture_output=True)
+    assert '--job-name=joint-previews' in preview.stdout
+    assert '--gpus=' not in preview.stdout

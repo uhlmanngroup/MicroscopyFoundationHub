@@ -12,6 +12,7 @@ import itertools
 import json
 import os
 import re
+import shutil
 import tempfile
 from copy import deepcopy
 from dataclasses import asdict
@@ -23,12 +24,12 @@ import yaml
 
 from dino_peft.config import deep_merge, load_config, repo_root
 from dino_peft.utils.paths import write_run_info
-from .joint_cache import load_cache_manifest, read_shard
-from .joint_metric import MetricConfig, compute_metric, risk_from_components, sample_indices, _rng
+from .joint_cache import _resolve_sources, _shard_path, load_cache_manifest, read_shard
+from .joint_metric import MetricConfig, compute_metric, near_foreground_background, risk_from_components, sample_indices, _rng
 from .joint_report import alignment_triptych, join_performance, save_cloud_projection, summarize_results, write_json, write_report
 
 
-REPORT_VERSION = 2
+REPORT_VERSION = 3
 
 
 def digest(value: object) -> str:
@@ -69,10 +70,21 @@ def resolve_experiment(cfg: dict, collection: str, backbone: str) -> dict:
     }
 
 
-def load_occupancies(cache_dir: Path, entries: list[dict]) -> dict:
-    return {entry["id"]: np.concatenate([
-        read_shard(cache_dir, entry, shard, embeddings=False)[1]
-        for shard in entry["shards"]]) for entry in entries}
+def load_occupancies(cache_dir: Path, entries: list[dict], config: MetricConfig) -> tuple[dict, dict]:
+    occupancies, near = {}, {}
+    for entry in entries:
+        chunks, nearby = [], []
+        for shard in entry["shards"]:
+            q = read_shard(cache_dir, entry, shard, embeddings=False)[1]
+            chunks.append(q)
+            if config.background_sampling == "near_foreground":
+                nearby.append(near_foreground_background(
+                    q, shard["grid_shape"], tau_fg=config.tau_fg,
+                    tau_bg=config.tau_bg, radius=config.near_foreground_radius_patches))
+        occupancies[entry["id"]] = np.concatenate(chunks)
+        if nearby:
+            near[entry["id"]] = np.concatenate(nearby)
+    return occupancies, near
 
 
 def load_selected(cache_dir: Path, entries: list[dict], selection: dict) -> tuple[dict, dict]:
@@ -109,7 +121,7 @@ def _implementation_hash() -> str:
 
 
 def save_alignment_previews(cache_dir: Path, manifest: dict, entries: list[dict], identities: dict,
-                            config: MetricConfig, output: Path) -> dict:
+                            config: MetricConfig, output: Path, current_sources: dict | None = None) -> dict:
     """Reload three reproducible random images per dataset; never run a model.
 
     Use the cache's extraction recipe, not today's training config. Verify file
@@ -128,14 +140,24 @@ def save_alignment_previews(cache_dir: Path, manifest: dict, entries: list[dict]
         name = entry["id"]
         try:
             source = sources[name]
-            dataset = _AlignedDataset(source)
+            try:
+                dataset = _AlignedDataset(source)
+            except RuntimeError:
+                current = (current_sources or {}).get(name)
+                if not current or (current["image_dir"], current["mask_dir"]) == (source["image_dir"], source["mask_dir"]):
+                    raise
+                # Preserve the cache's preprocessing; only relocate its sources.
+                dataset = _AlignedDataset({**source, "image_dir": current["image_dir"], "mask_dir": current["mask_dir"]})
             positions = {ip.relative_to(dataset.dataset.image_dir).as_posix(): i for i, (ip, _) in enumerate(dataset.dataset.pairs)}
             chosen = sorted(_rng(config.seed, name, "alignment_preview").choice(len(entry["shards"]), min(3, len(entry["shards"])), replace=False))
             for index in chosen:
                 shard = entry["shards"][index]
                 position = positions[shard["sample_id"]]
-                for path in dataset.dataset.pairs[position]:
-                    if original_files[str(path)] != (path.stat().st_size, path.stat().st_mtime_ns):
+                for path, old_dir, new_dir in zip(dataset.dataset.pairs[position],
+                                                   (source["image_dir"], source["mask_dir"]),
+                                                   (dataset.dataset.image_dir, dataset.dataset.mask_dir)):
+                    original = str(Path(old_dir) / path.relative_to(new_dir))
+                    if original_files[original] != (path.stat().st_size, path.stat().st_mtime_ns):
                         raise ValueError(f"Source file changed since extraction: {path}")
                 image, mask, meta = dataset[position]
                 for key in ("sample_id", "original_image_shape", "processed_shape", "crop_box_xyxy"):
@@ -154,10 +176,30 @@ def save_alignment_previews(cache_dir: Path, manifest: dict, entries: list[dict]
                                           tau_fg=config.tau_fg, tau_bg=config.tau_bg,
                                           title=f"{name} · {shard['sample_id']} · seed {config.seed}", selected=selected)
                 report["previews"].append({"dataset": name, "sample_id": shard["sample_id"], "figure": relative,
+                                           "source": "source_files", "relocated": str(dataset.dataset.image_dir) != source["image_dir"],
                                            "cache_occupancy_verified": True, "processed_shape": meta["processed_shape"],
                                            "crop_box_xyxy": meta["crop_box_xyxy"], **stats})
         except (OSError, KeyError, ValueError, RuntimeError) as exc:
-            report["warnings"].append(f"Alignment preview unavailable for {name}: {exc}")
+            cached = 0
+            for index, shard in enumerate(entry["shards"]):
+                if "preview" not in shard:
+                    continue
+                path = _shard_path(cache_dir, shard["preview"])
+                if not path.is_file():
+                    continue
+                relative = f"figs/alignment/{name}-cached-{index:07d}.png"
+                destination = output / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, destination)
+                report["previews"].append({"dataset": name, "sample_id": shard["sample_id"],
+                                           "figure": relative, "source": "cache_preview",
+                                           "cache_occupancy_verified": False, "crop_box_xyxy": shard.get("crop_box_xyxy"),
+                                           "near_black_pixel_fraction": None})
+                cached += 1
+            report["warnings"].append(
+                f"{name}: could not verify source images for random alignment checks ({exc}); "
+                + (f"showing {cached} triptychs saved during cache extraction, without sampled locations."
+                   if cached else "no cached triptychs available."))
     return report
 
 
@@ -195,8 +237,8 @@ def run_one(cfg: dict, *, update_index: bool = True) -> Path:
         return output
     output.parent.mkdir(parents=True, exist_ok=True)
     print(f"[joint-metric] {collection}/{backbone}/{run_id}: counting cached occupancies", flush=True)
-    occupancies = load_occupancies(cache_dir, entries)
-    selection = sample_indices(occupancies, config)
+    occupancies, nearby = load_occupancies(cache_dir, entries, config)
+    selection = sample_indices(occupancies, config, near_background=nearby)
     distributions, identities = load_selected(cache_dir, entries, selection)
     del occupancies
     for name, counts in selection["counts"].items():
@@ -220,7 +262,8 @@ def run_one(cfg: dict, *, update_index: bool = True) -> Path:
         write_json(stage / "samples.json", {"seed": config.seed, "cache_hash": manifest["extraction_hash"], "datasets": identities})
         print("[joint-metric] plotting sampled clouds and checking random image/mask alignments", flush=True)
         save_cloud_projection(result, distributions, stage)
-        result["alignment"] = save_alignment_previews(cache_dir, manifest, entries, identities, config, stage)
+        current_sources = {source["id"]: source for source in _resolve_sources(cfg)}
+        result["alignment"] = save_alignment_previews(cache_dir, manifest, entries, identities, config, stage, current_sources)
         result["warnings"].extend(result["alignment"]["warnings"])
         bary = result.get("barycenter", {})
         if "support" in bary:
@@ -271,6 +314,36 @@ def run_from_config(cfg: dict, *, sweep: dict | None = None, update_index: bool 
         if update_index:
             summarize_results(Path(cfg["results_root"]))
     return paths
+
+
+def refresh_alignment_report(components: Path, joint_cfg: dict) -> Path:
+    """Repair report previews from relocated sources without rerunning OT."""
+    components = components.resolve()
+    output = components.parent
+    result = json.loads(components.read_text())
+    cache_dir = Path(result["cache_dir"])
+    manifest = load_cache_manifest(cache_dir)
+    entries_by_id = {entry["id"]: entry for entry in manifest["datasets"]}
+    entries = [entries_by_id[name] for name in result["dataset_order"]]
+    identities = json.loads((output / "samples.json").read_text())["datasets"]
+    collection = result["collection_id"].split("__", 1)[0]
+    current_sources = {}
+    if collection in joint_cfg["collections"]:
+        for backbone in joint_cfg["backbones"]:
+            experiment = resolve_experiment(joint_cfg, collection, backbone)
+            if experiment["backbone_id"] == result["backbone"]:
+                current_sources = {source["id"]: source for source in _resolve_sources(experiment)}
+                break
+    old_warnings = set(result.get("alignment", {}).get("warnings", []))
+    result["warnings"] = [warning for warning in result.get("warnings", []) if warning not in old_warnings]
+    result["alignment"] = save_alignment_previews(
+        cache_dir, manifest, entries, identities, MetricConfig(**result["config"]), output,
+        current_sources)
+    result["warnings"].extend(result["alignment"]["warnings"])
+    result["alignment_refreshed_utc"] = datetime.now(timezone.utc).isoformat()
+    write_report(result, output)
+    summarize_results(output.parents[2])
+    return output
 
 
 def recompute(components: Path, output: Path, *, formula: str = "ratio", epsilon: float = 1e-8, consensus: str = "barycenter", performance_csv: str | None = None) -> Path:

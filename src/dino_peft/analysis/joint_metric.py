@@ -20,6 +20,8 @@ import numpy as np
 class MetricConfig:
     tau_fg: float = 0.8
     tau_bg: float = 0.2
+    background_sampling: str = "all"
+    near_foreground_radius_patches: int = 2
     n_samples_per_distribution: int = 512
     min_samples_per_distribution: int = 16
     seed: int = 0
@@ -38,6 +40,10 @@ class MetricConfig:
     def __post_init__(self) -> None:
         if not 0 <= self.tau_bg < self.tau_fg <= 1:
             raise ValueError("Require 0 <= tau_bg < tau_fg <= 1.")
+        if self.background_sampling not in ("all", "near_foreground"):
+            raise ValueError("background_sampling must be all or near_foreground.")
+        if not isinstance(self.near_foreground_radius_patches, int) or isinstance(self.near_foreground_radius_patches, bool) or self.near_foreground_radius_patches < 1:
+            raise ValueError("near_foreground_radius_patches must be a positive integer.")
         for name in ("n_samples_per_distribution", "min_samples_per_distribution",
                      "barycenter_support", "barycenter_max_iterations"):
             value = getattr(self, name)
@@ -77,8 +83,29 @@ def _dataset_names(datasets: Mapping) -> list[str]:
     return sorted(datasets)
 
 
+def near_foreground_background(occupancy: np.ndarray, grid_shape: Sequence[int],
+                               *, tau_fg: float, tau_bg: float, radius: int) -> np.ndarray:
+    """Clear BG within a Chebyshev-radius patch neighborhood of clear FG.
+
+    The neighborhood is computed separately for each image: patches cannot
+    become near an object in a different image when shards are concatenated.
+    """
+    height, width = map(int, grid_shape)
+    q = np.asarray(occupancy)
+    if q.shape != (height * width,) or radius < 1:
+        raise ValueError("Invalid patch grid or near-foreground radius")
+    fg = (q.reshape(height, width) >= tau_fg).astype(np.int32)
+    padded = np.pad(fg, radius)
+    integral = np.pad(padded, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    diameter = 2 * radius + 1
+    nearby = (integral[diameter:, diameter:] - integral[:-diameter, diameter:]
+              - integral[diameter:, :-diameter] + integral[:-diameter, :-diameter]) > 0
+    return ((q.reshape(height, width) <= tau_bg) & nearby).reshape(-1)
+
+
 def sample_indices(
-    occupancies: Mapping[str, np.ndarray], config: MetricConfig
+    occupancies: Mapping[str, np.ndarray], config: MetricConfig,
+    *, near_background: Mapping[str, np.ndarray] | None = None,
 ) -> dict[str, Any]:
     """Return balanced FG/BG samples as original flattened cache indices.
 
@@ -94,11 +121,22 @@ def sample_indices(
         q = np.asarray(occupancies[name])
         if q.ndim != 1 or not np.isfinite(q).all() or ((q < 0) | (q > 1)).any():
             raise ValueError(f"{name}: occupancy must be a finite 1D array in [0, 1].")
-        fg, bg = np.flatnonzero(q >= config.tau_fg), np.flatnonzero(q <= config.tau_bg)
+        fg = np.flatnonzero(q >= config.tau_fg)
+        all_bg = q <= config.tau_bg
+        if config.background_sampling == "near_foreground":
+            if near_background is None or name not in near_background:
+                raise ValueError(f"Missing near-foreground candidate mask for {name}")
+            eligible = np.asarray(near_background[name])
+            if eligible.shape != q.shape or eligible.dtype != np.bool_ or np.any(eligible & ~all_bg):
+                raise ValueError(f"Invalid near-foreground candidate mask for {name}")
+            bg = np.flatnonzero(eligible)
+        else:
+            bg = np.flatnonzero(all_bg)
         candidates[name] = {"foreground": fg, "background": bg}
         counts[name] = {
             "n_available": int(q.size), "n_foreground": int(fg.size),
-            "n_background": int(bg.size), "n_ambiguous": int(q.size - fg.size - bg.size),
+            "n_background": int(bg.size), "n_background_all": int(all_bg.sum()),
+            "n_ambiguous": int(q.size - fg.size - all_bg.sum()),
         }
         if min(fg.size, bg.size) < config.min_samples_per_distribution:
             raise ValueError(

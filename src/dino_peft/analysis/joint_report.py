@@ -287,6 +287,7 @@ def make_figures(result: dict, output: Path) -> None:
 def collection_row(result: dict) -> dict:
     row = {"backbone": result["backbone"], "collection_id": result["collection_id"], "run_id": result["run_id"], **result["collection"]}
     row.update(result.get("config", {}))
+    row.setdefault("background_sampling", "all")
     row["cache_hash"] = result.get("cache_hash", "")
     row["barycenter_converged"] = result.get("barycenter", {}).get("converged", result.get("barycenter", {}).get("diagnostics", {}).get("converged"))
     row["barycenter_gradient_rms"] = result.get("barycenter", {}).get("final_mass_scaled_gradient_rms")
@@ -300,6 +301,7 @@ def write_report(result: dict, output: Path, *, make_plots: bool = True) -> None
         make_figures(result, output / "figs")
     rows = result["per_dataset"]
     for row in rows:
+        row.setdefault("n_background_all", row.get("n_background"))
         row.update({"backbone": result["backbone"], "collection_id": result["collection_id"], "run_id": result["run_id"]})
     write_json(output / "components.json", result)
     write_csv(output / "per_dataset.csv", rows)
@@ -310,7 +312,7 @@ def write_report(result: dict, output: Path, *, make_plots: bool = True) -> None
     fields = [("dataset", "Dataset"), ("C_i", "C: consensus deviation"), ("S_i", "S: FG/BG separation"), ("r_i", "r: candidate risk"), ("C_pairwise", "Pairwise consensus"), ("r_pairwise", "Pairwise risk")]
     if any("delta_i" in r for r in rows):
         fields += [("iou_individual", "Individual IoU"), ("iou_joint", "Joint IoU"), ("delta_i", "ΔIoU")]
-    counts = [("dataset", "Dataset"), ("n_available", "All patches"), ("n_foreground", "Clear FG"), ("n_background", "Clear BG"), ("n_ambiguous", "Discarded mixed"), ("n_sampled_foreground", "Sampled FG"), ("n_sampled_background", "Sampled BG")]
+    counts = [("dataset", "Dataset"), ("n_available", "All patches"), ("n_foreground", "Clear FG"), ("n_background_all", "All clear BG"), ("n_background", "Eligible BG"), ("n_ambiguous", "Discarded mixed"), ("n_sampled_foreground", "Sampled FG"), ("n_sampled_background", "Sampled BG")]
     title = f'{result["collection_id"]} · {result["backbone"]}'
     body = '<div class="tag">Joint-training compatibility · experimental diagnostic</div>'
     body += f'<h1>{esc(title)}</h1><p class="muted">Run {esc(result["run_id"])} · {len(rows)} equally weighted datasets · seed {esc(cfg.get("seed"))}</p>'
@@ -328,6 +330,11 @@ def write_report(result: dict, output: Path, *, make_plots: bool = True) -> None
     body += '<div class="cards">' + ''.join(f'<div class="card">{esc(label)}<b>{number(c[key])}</b><small>{esc(desc)}</small></div>' for key, label, desc in [("G", "Global risk G", "Mean candidate risk"), ("L", "Selective risk L", "Population standard deviation"), ("L_rel", "Relative dispersion", "L / (G + ε)")]) + '</div>'
     body += f'<p>Risk formula: <code>{esc(cfg.get("risk_formula", "ratio"))}</code>; consensus for risk: <code>{esc(cfg.get("risk_consensus", "barycenter"))}</code>. C below always records the barycenter deviation.</p>'
     body += f'<p>Sinkhorn scaling: <b>{esc(cfg.get("sinkhorn_scaling"))}</b> · OT regularization ε: {esc(cfg.get("ot_epsilon"))} · seed: {esc(cfg.get("seed"))}. Scaling controls numerical accuracy; compare convergence and scores with the original 0.9 run using the same seed.</p>'
+    if cfg.get("background_sampling") == "near_foreground":
+        radius = cfg["near_foreground_radius_patches"]
+        body += f'<p><b>Background sampling: near foreground.</b> A clear background patch is eligible when a clear foreground patch occurs within {radius} patch-grid steps on the same image (including diagonals). Foreground eligibility and full-image embeddings are unchanged; check the sample counts when comparing with an all-background run at the same seed and Sinkhorn settings.</p>'
+    else:
+        body += '<p><b>Background sampling: all clear background patches.</b> This includes black exterior canvas when it is labeled background.</p>'
     body += '<p>These are continuous research diagnostics. Compare runs with matching settings; no universal safe/unsafe thresholds have been calibrated. A large L means uneven risk, while G measures its average level. Inspect C and S before interpreting the ratio.</p>'
     if warnings:
         body += '<div class="warn"><b>Checks requiring attention</b><ul>' + ''.join(f'<li>{esc(w)}</li>' for w in warnings) + '</ul></div>'
@@ -349,10 +356,13 @@ def write_report(result: dict, output: Path, *, make_plots: bool = True) -> None
     body += '<h2>Sampling and filtering</h2><div class="panel">' + table(rows, counts, "counts") + '</div>'
     alignment = result.get("alignment", {})
     if alignment:
-        body += '<h2 id="alignment">Image / mask / patch alignment</h2><p>Up to three reproducible random training images per dataset, reconstructed using the cache’s original preprocessing. Left: actual processed input. Middle: foreground mask in green. Right: foreground (green), background (blue), mixed patches (amber). Circles and crosses mark foreground and background patches sampled for this metric run.</p>'
-        body += '<p>Check that the green mask follows the target structures and that patch classes follow mask coverage. Black surroundings remain visible. “Near-black” means all processed RGB channels ≤ 2/255; this is a visual diagnostic, not a tissue detector or an exclusion rule. Percentages describe these example images only.</p>'
+        body += '<h2 id="alignment">Image / mask / patch alignment</h2><p>When source images are available, up to three reproducible random images per dataset are reconstructed with the cache’s original preprocessing and checked against its mask occupancies. They show the processed input, foreground mask and patch classes; circles and crosses mark sampled locations. If sources have moved, the report instead shows the triptychs saved during extraction. Those are the first cached images, have no sampled markers, and cannot be independently rechecked against the current source files.</p>'
+        body += '<p>Check that the mask follows the target structures and that patch classes follow mask coverage. “Near-black” means all processed RGB channels ≤ 2/255; this is a visual diagnostic, not a tissue detector or an exclusion rule. Percentages describe source-file examples only.</p>'
         for preview in alignment.get("previews", []):
-            caption = f'{preview["dataset"]} · {preview["sample_id"]} · cached occupancy verified · crop: {preview["crop_box_xyxy"]} · near-black pixels: {preview["near_black_pixel_fraction"]:.1%}'
+            if preview.get("source") == "cache_preview":
+                caption = f'{preview["dataset"]} · {preview["sample_id"]} · saved during cache extraction; source files not reverified · sampled locations not shown'
+            else:
+                caption = f'{preview["dataset"]} · {preview["sample_id"]} · cached occupancy verified · crop: {preview["crop_box_xyxy"]} · near-black pixels: {preview["near_black_pixel_fraction"]:.1%}'
             body += '<figure class="panel">' + _image(output, preview["figure"], caption) + f'<figcaption>{esc(caption)} · <a href="{esc(preview["figure"])}">Download triptych</a></figcaption></figure>'
     bary = result.get("barycenter", {})
     body += '<h2 id="diagnostics">Method and numerical diagnostics</h2><div class="panel">'
@@ -390,7 +400,7 @@ def summarize_results(root: Path) -> list[dict]:
             invalid.append(f"{path.relative_to(root)}: {exc}")
     write_csv(root / "all_collections.csv", rows)
     write_csv(root / "all_datasets.csv", datasets)
-    fields = [("collection_id", "Collection"), ("backbone", "Backbone"), ("run_id", "Run"), ("G", "Global G"), ("L", "Selective L"), ("pairwise_G", "Pairwise G"), ("seed", "Seed"), ("sinkhorn_scaling", "Sinkhorn scaling"), ("barycenter_converged", "Converged"), ("barycenter_gradient_rms", "Gradient RMS"), ("tau_fg", "τ FG"), ("tau_bg", "τ BG"), ("ot_epsilon", "OT ε"), ("risk_formula", "Risk formula"), ("warning_count", "Warnings")]
+    fields = [("collection_id", "Collection"), ("backbone", "Backbone"), ("run_id", "Run"), ("G", "Global G"), ("L", "Selective L"), ("pairwise_G", "Pairwise G"), ("background_sampling", "Background sample"), ("near_foreground_radius_patches", "Near radius (patches)"), ("seed", "Seed"), ("sinkhorn_scaling", "Sinkhorn scaling"), ("barycenter_converged", "Converged"), ("barycenter_gradient_rms", "Gradient RMS"), ("tau_fg", "τ FG"), ("tau_bg", "τ BG"), ("ot_epsilon", "OT ε"), ("risk_formula", "Risk formula"), ("warning_count", "Warnings")]
     body = '<div class="tag">Experiment navigator</div><h1>Joint-training compatibility</h1>'
     body += f'<p>{len(rows)} completed metric runs. Filter by collection, backbone, seed or run ID, then open the run for components, plots and numerical checks.</p><nav><a href="all_collections.csv">All collection results (CSV)</a><a href="all_datasets.csv">All dataset components (CSV)</a></nav>'
     body += '<p>Compare matching threshold, normalization, OT and sampling settings. G is average risk; L is its unevenness across datasets. These values do not yet establish safe/unsafe categories.</p><div class="panel">' + table(rows, fields, "runs", {"run_id": lambda row: row["report"]}) + '</div>'

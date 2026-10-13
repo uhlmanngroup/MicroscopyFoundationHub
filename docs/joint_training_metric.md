@@ -114,29 +114,57 @@ and display axes are saved in `cloud_projection.npz`, in the sample order record
 in `components.json` and `samples.json`.
 
 Three reproducible random training-image triptychs per dataset are saved under
-`figs/alignment/` and included in the report: processed image, foreground-mask
-overlay, and patch classes with sampled locations. They reload only those source
-images/masks using the cache's saved preprocessing, check size/mtime and geometry,
-and compare reconstructed occupancies to the cached values. No backbone runs.
-Missing/changed source files produce an explicit preview warning. The near-black
-fraction is only an example-image diagnostic (all processed RGB channels <= 2/255),
-not a tissue mask, dataset-wide estimate, or automatic exclusion rule.
+`figs/alignment/` and included in the report when source files are accessible:
+processed image, foreground-mask overlay, and patch classes with sampled
+locations. They use the cache's saved preprocessing, check size/mtime and
+geometry, and compare reconstructed occupancies to the cached values. If source
+files have moved, current config paths (including `DINO_PEFT_DATA_ROOT`) are
+tried with the saved preprocessing and original file identity. If those fail,
+the report shows the first triptychs saved during cache extraction, explicitly
+labeled as such; they cannot show sampled markers or be independently rechecked.
+No backbone runs for report generation. The near-black fraction is only an
+example-image diagnostic (all processed RGB channels <= 2/255), not a tissue
+mask, dataset-wide estimate, or automatic exclusion rule.
+
+The cluster's EM images currently live under
+`/home/cfuste/data/DINO-LoRA/datasets/EM/`; the joint-metric EM entries use
+`joint_em_data_root` from `configs/paths.yaml`. Other training collections keep
+their existing `data_root`. The October 13 all-background report can be repaired without rerunning
+the metric by submitting a CPU-only preview refresh (replace the run ID when
+refreshing a different report):
+
+```bash
+bash slurm/submit_joint_metric.sh --previews-only --components \
+  /home/cfuste/data/DINO-LoRA/joint_metric/em/dinov3_vitl16/5e69dd369db7697e/components.json
+```
+
+The refresh uses the original cache recipe, verifies relocated source file
+size/mtime, image/mask geometry and per-patch occupancy, then updates the
+report and navigator. If relocation cannot be verified, it labels and shows
+the extraction-time cache triptychs instead of claiming random alignment.
 
 PNG figures are embedded in the per-run HTML, so downloading that HTML alone
 preserves the visual report. Download the whole result folder for CSV/JSON/NPZ,
 vector figures, individual triptychs and navigation between runs.
 
-The shared config now sets `sinkhorn_scaling: 0.99` for a numerical comparison
-with the initial 0.9 run, keeping seed 42, OT epsilon, sampling and the risk
+The shared config uses `sinkhorn_scaling: 0.99`. The previous all-background
+run converged at this setting. The current config changes only background
+*eligibility* to `near_foreground` with radius 2 patch-grid steps, while keeping
+full-image embeddings, foreground eligibility, seed 42, OT epsilon, and the risk
 equation unchanged. Reuse the existing cluster cache with:
 
 ```bash
 bash slurm/submit_joint_metric.sh --collection em --backbone dinov3 --metrics-only
 ```
 
-The index includes scaling, convergence and final gradient RMS to compare runs;
-each report plots the convergence history. Increasing scaling is an accuracy
-check, not a guarantee that the barycenter optimizer will converge.
+The index includes background sampling mode, scaling, convergence and final
+gradient RMS to compare runs. At each image's patch grid, the new candidate set
+is `q <= 0.2` and within two horizontal/vertical/diagonal grid steps of at
+least one `q >= 0.8` patch. Mixed patches remain excluded, and proximity never
+crosses images. The same rule applies to every dataset, including DeepBacs;
+no pixel-intensity filter is used. A common cap balances foreground and
+eligible-background samples. Check that the new run still samples 512 of each;
+otherwise compare sampling counts before interpreting score changes.
 
 ### Kasthuri black surroundings
 
@@ -149,9 +177,12 @@ area-based masks to retain fractional patch occupancy. Separate TRIPLET feature
 analysis configs/utilities support center crops; they are not used by standard
 Kasthuri segmentation or this metric.
 
-Black regions labeled background are eligible background samples. They could
-increase measured FG/BG separation S and consequently lower C/S; their effect
-on the foreground representation and C must be tested. Foreground Dice/IoU does
+In the original all-background run, black regions labeled background were
+eligible background samples. They could increase measured FG/BG separation S
+and consequently lower C/S; their effect on the foreground representation and
+C must be tested. The near-foreground run keeps the original full-image
+embeddings but asks how separable the foreground is from nearby background.
+It does not remove every black patch or modify training/evaluation. Foreground Dice/IoU does
 not reward true-negative black pixels directly, but predictions of foreground
 there count as false positives. Background/mean-class scores can benefit from
 easy background, and training loss also sees those pixels. Do not interpret
@@ -164,6 +195,9 @@ original report's exact Kasthuri patch counts: 305,235 total, 4,647 clear
 foreground, 290,190 clear background, 10,398 mixed. This establishes substantial
 border exposure in that sample, but only an exclusion ablation can quantify its
 effect on S and the risk ratio.
+At radius 2, 40,365 Kasthuri patches are eligible and about 3% of that local
+candidate pool are at least 95% near-black. Lucchi and VNC have 80,032 and
+8,745 eligible patches respectively, all above the 512-sample cap.
 
 The distance is GeomLoss Sinkhorn divergence with squared Euclidean cost:
 `2 * SamplesLoss(p=2, blur=sqrt(ot_epsilon/2))`. All empirical measures have unit

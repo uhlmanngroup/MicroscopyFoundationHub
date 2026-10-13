@@ -15,6 +15,7 @@ from dino_peft.config import load_config
 from dino_peft.analysis.joint_cache import _AlignedDataset, _resolve_sources, extract_joint_cache, occupancy_on_grid
 from dino_peft.analysis.joint_metric import MetricConfig, SinkhornDistance, compute_metric, fit_barycenter, risk_from_components, sample_indices, _transform_distributions
 from dino_peft.analysis.joint_run import recompute, resolve_experiment, run_one
+from dino_peft.analysis.joint_report import save_cloud_projection
 from dino_peft.backbones.base import BackboneOutput
 
 
@@ -87,7 +88,7 @@ def test_risk_population_std_and_separability():
     assert risk_from_components([1, 3], [10, 100], formula='consensus')['r'] == [1, 3]
 
 
-def test_shared_balanced_pca(cfg):
+def test_shared_balanced_pca(cfg, tmp_path):
     data = clouds([[1., 0., 0.], [0., 2., 0.]])
     data['0'] = {k: np.tile(v, (5, 1)) for k, v in data['0'].items()}
     transformed, meta = _transform_distributions(data, replace(cfg, pca_dim=2))
@@ -96,6 +97,21 @@ def test_shared_balanced_pca(cfg):
         for kind, array in classes.items():
             expected = (array - meta['pca_mean']) @ np.array(meta['pca_components']).T
             np.testing.assert_allclose(transformed[name][kind], expected)
+    # Display projection must apply the SAME metric transform to samples and
+    # the already-fitted barycenter (never normalize or refit the support).
+    config = replace(cfg, pca_dim=2, l2_normalize=True)
+    transformed, _ = _transform_distributions(data, config)
+    support = np.array([[.2, .3], [-.2, -.1]])
+    result = {"config": vars(config), "barycenter": {"support": support.tolist()}}
+    save_cloud_projection(result, data, tmp_path)
+    with np.load(tmp_path / 'cloud_projection.npz') as projected:
+        for name in data:
+            for kind in ('foreground', 'background'):
+                selected = (projected['dataset'] == name) & (projected['kind'] == kind)
+                expected = (transformed[name][kind] - projected['mean']) @ projected['axes'].T
+                np.testing.assert_allclose(projected['coordinates'][selected], expected)
+        np.testing.assert_allclose(projected['barycenter'], (support - projected['mean']) @ projected['axes'].T)
+        assert projected['explained_variance_ratio'].sum() == pytest.approx(1.)
 
 
 def test_fractional_mask_alignment(tmp_path):
@@ -123,7 +139,8 @@ def test_cache_to_report_and_risk_only_reuse(tmp_path, cfg, monkeypatch):
     for name in ['a', 'b']:
         path = tmp_path / name; path.mkdir()
         mask = np.zeros((8, 8), np.uint8); mask[:, :4] = 255
-        Image.fromarray(mask).save(path / '0.png')
+        for index in range(5):
+            Image.fromarray(mask).save(path / f'{index}.png')
         datasets.append({'id': name, 'image_dir': str(path), 'mask_dir': str(path)})
     experiment = {'cache_dir': str(tmp_path / 'cache'), 'results_root': str(tmp_path / 'results'),
                   'collection_id': 'synthetic', 'backbone_id': 'test', 'backbone': {'name': 'dinov3'},
@@ -134,12 +151,18 @@ def test_cache_to_report_and_risk_only_reuse(tmp_path, cfg, monkeypatch):
         raise AssertionError('Reuse must not call backbone inference or OT')
     extract_joint_cache(experiment, backbone_factory=forbidden)
     output = run_one(experiment)
-    assert all((output / p).is_file() for p in ['samples.json', 'components.json', 'index.html', 'per_dataset.csv', 'figs/components.svg'])
+    assert all((output / p).is_file() for p in ['samples.json', 'components.json', 'index.html', 'per_dataset.csv', 'figs/components.svg', 'cloud_projection.npz', 'figs/foreground_clouds.png', 'figs/foreground_background.svg', 'figs/convergence.png'])
     result = json.loads((output / 'components.json').read_text())
     assert result['collection']['G'] < 1e-8
+    assert len(result['alignment']['previews']) == 6 and not result['alignment']['warnings']
+    assert all(p['cache_occupancy_verified'] and p['near_black_pixel_fraction'] == .5 for p in result['alignment']['previews'])
+    report = (output / 'index.html').read_text()
+    assert 'src="data:image/png;base64,' in report and 'src="figs/' not in report
     monkeypatch.setattr('dino_peft.analysis.joint_run.compute_metric', forbidden)
     assert run_one(experiment) == output
     recompute(output / 'components.json', tmp_path / 'alternative', formula='consensus')
+    assert (tmp_path / 'alternative/cloud_projection.npz').read_bytes() == (output / 'cloud_projection.npz').read_bytes()
+    assert len(list((tmp_path / 'alternative/figs/alignment').glob('*.png'))) == 6
     with (tmp_path / 'cache/a/0000000.npz').open('ab') as f:
         f.write(b'corrupted')
     with pytest.raises(ValueError, match='checksum'):
@@ -148,6 +171,7 @@ def test_cache_to_report_and_risk_only_reuse(tmp_path, cfg, monkeypatch):
 
 def test_shared_config_and_cluster_dependencies(tmp_path):
     config = load_config('configs/cluster/joint_metric.yaml')
+    assert config['metric']['sinkhorn_scaling'] == .99
     for collection in config['collections']:
         for backbone in config['backbones']:
             experiment = resolve_experiment(config, collection, backbone)

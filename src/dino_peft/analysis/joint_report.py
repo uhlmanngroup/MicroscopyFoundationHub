@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import base64
 import html
 import json
 import math
@@ -111,11 +112,136 @@ def _pyplot():
     return plt
 
 
+def save_cloud_projection(result: dict, distributions: dict, output: Path) -> None:
+    """One display-only PCA for actual metric samples and the fitted support."""
+    from .joint_metric import MetricConfig, _transform_distributions
+    clouds, _ = _transform_distributions(distributions, MetricConfig(**result["config"]))
+    groups = [(name, kind, cloud) for name in sorted(clouds) for kind, cloud in clouds[name].items()]
+    # Balanced datasets/classes determine the axes; the barycenter does not.
+    cap = min(len(cloud) for _, _, cloud in groups)
+    pooled = np.concatenate([cloud[:cap] for _, _, cloud in groups])
+    mean = pooled.mean(axis=0)
+    _, singular, vectors = np.linalg.svd(pooled - mean, full_matrices=False)
+    axes = np.zeros((2, pooled.shape[1]))
+    axes[:min(2, len(vectors))] = vectors[:2]
+    pivots = np.argmax(np.abs(axes), axis=1)
+    axes *= np.where(axes[np.arange(2), pivots] < 0, -1., 1.)[:, None]
+    variance = np.zeros(2)
+    if np.square(singular).sum() > 0:
+        variance[:min(2, len(singular))] = np.square(singular[:2]) / np.square(singular).sum()
+    np.savez_compressed(output / "cloud_projection.npz",
+                        coordinates=np.concatenate([(cloud - mean) @ axes.T for _, _, cloud in groups]),
+                        dataset=np.concatenate([np.repeat(name, len(cloud)) for name, _, cloud in groups]),
+                        kind=np.concatenate([np.repeat(kind, len(cloud)) for _, kind, cloud in groups]),
+                        barycenter=(np.asarray(result["barycenter"]["support"]) - mean) @ axes.T,
+                        mean=mean, axes=axes, explained_variance_ratio=variance)
+    result["projection"] = {"method": "shared_balanced_PCA_2D", "display_only": True,
+                            "fit": "equal samples per dataset and foreground/background class; excludes barycenter",
+                            "input_dimension": int(pooled.shape[1]), "explained_variance_ratio": variance.tolist(),
+                            "coordinate_order": "sorted datasets, foreground then background; matches samples.json within each group",
+                            "artifact": "cloud_projection.npz"}
+
+
+def alignment_triptych(path: Path, image, mask, occupancy, grid_shape, *, normalization="training",
+                      tau_fg=.8, tau_bg=.2, title="", selected=None) -> dict:
+    """Display the actual processed input, mask overlay, and patch assignments."""
+    from matplotlib.colors import ListedColormap
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    from dino_peft.utils.transforms import IMAGENET_MEAN, IMAGENET_STD, OPENCLIP_MEAN, OPENCLIP_STD
+    mean, std = (OPENCLIP_MEAN, OPENCLIP_STD) if normalization == "openclip_native" else (IMAGENET_MEAN, IMAGENET_STD)
+    rgb = np.clip(image.numpy().transpose(1, 2, 0) * np.asarray(std) + np.asarray(mean), 0, 1)
+    foreground = np.asarray(mask)
+    q = np.asarray(occupancy).reshape(grid_shape)
+    classes = np.where(q >= tau_fg, 2, np.where(q <= tau_bg, 0, 1))
+    colors = ["#3182bd", "#e6ad39", "#31a354"]
+    height, width = foreground.shape
+    extent = (0, width, height, 0)
+    plt = _pyplot()
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.8))
+    for ax in axes:
+        ax.imshow(rgb, extent=extent)
+        ax.set_axis_off()
+    overlay = np.zeros((*foreground.shape, 4))
+    overlay[..., 1] = 1
+    overlay[..., 3] = foreground * .55
+    axes[1].imshow(overlay, extent=extent)
+    axes[2].imshow(classes, cmap=ListedColormap(colors), vmin=0, vmax=2, interpolation="nearest", alpha=.5, extent=extent)
+    handles = [Patch(color=color, label=label) for color, label in zip(colors, (f"BG: q ≤ {tau_bg:g}", "Mixed (excluded)", f"FG: q ≥ {tau_fg:g}"))]
+    for kind, marker in (("foreground", "o"), ("background", "x")):
+        tokens = (selected or {}).get(kind, [])
+        if tokens:
+            row, col = np.divmod(tokens, grid_shape[1])
+            axes[2].scatter((col + .5) * width / grid_shape[1], (row + .5) * height / grid_shape[0],
+                            s=22, marker=marker, linewidths=.8, **({"facecolors": "none", "edgecolors": "black"} if marker == "o" else {"c": "black"}))
+            handles.append(Line2D([], [], marker=marker, color="black", markerfacecolor="none", linestyle="none", label=f"Sampled {kind}"))
+    for ax, label in zip(axes, ("1. Processed image", "2. Foreground mask overlay", "3. Patch labels" + (" + sampled locations" if selected is not None else ""))):
+        ax.set_title(label, fontsize=11)
+    dark = float(np.all(rgb <= 2 / 255, axis=2).mean())
+    fig.suptitle(f"{title}\nNear-black processed pixels: {dark:.1%} (diagnostic only; no pixels excluded)", fontsize=11)
+    fig.tight_layout(rect=(0, .07, 1, .88))
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles), fontsize=9, frameon=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+    return {"near_black_pixel_fraction": dark, "near_black_definition": "all processed RGB channels <= 2/255"}
+
+
+def _image(output: Path, relative: str, alt: str) -> str:
+    # A downloaded per-run HTML keeps its figures even without sibling files.
+    data = base64.b64encode((output / relative).read_bytes()).decode("ascii")
+    return f'<img src="data:image/png;base64,{data}" alt="{esc(alt)}">'
+
+
 def make_figures(result: dict, output: Path) -> None:
     plt = _pyplot()
     output.mkdir(parents=True, exist_ok=True)
     rows = result["per_dataset"]
     names = [r["dataset"] for r in rows]
+    projection = output.parent / "cloud_projection.npz"
+    if projection.is_file():
+        with np.load(projection, allow_pickle=False) as data:
+            xy, dataset, kind, bary, variance = (data[k] for k in ("coordinates", "dataset", "kind", "barycenter", "explained_variance_ratio"))
+        points = np.concatenate([xy, bary])
+        margin = np.maximum(np.ptp(points, axis=0), 1e-3) * .08
+        limits = np.array([points.min(axis=0) - margin, points.max(axis=0) + margin]).T
+        palette = {name: plt.get_cmap("tab10")(i % 10) for i, name in enumerate(names)}
+        fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
+        for name in names:
+            points = xy[(dataset == name) & (kind == "foreground")]
+            ax.scatter(*points.T, s=12, alpha=.5, color=palette[name], label=name, rasterized=True)
+        ax.scatter(*bary.T, s=65, marker="*", c="black", label=f"Barycenter ({len(bary)} points)", zorder=3)
+        ax.set(title="Foreground clouds and fitted barycenter", xlabel=f"PC1 ({variance[0]:.1%} of variance)", ylabel=f"PC2 ({variance[1]:.1%} of variance)")
+        ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
+        ax.legend(fontsize=9)
+        for suffix in ("png", "svg"):
+            fig.savefig(output / f"foreground_clouds.{suffix}", dpi=160, bbox_inches="tight")
+        plt.close(fig)
+        fig, axes = plt.subplots(1, len(names), figsize=(5 * len(names), 4.5), sharex=True, sharey=True, squeeze=False, layout="constrained")
+        for name, ax in zip(names, axes[0]):
+            for label, marker in (("background", "x"), ("foreground", "o")):
+                points = xy[(dataset == name) & (kind == label)]
+                ax.scatter(*points.T, s=13, alpha=.4, marker=marker, color=palette[name], label=label, rasterized=True)
+            ax.scatter(*bary.T, s=45, marker="*", c="black", label="barycenter", zorder=3)
+            ax.set(title=name, xlabel=f"PC1 ({variance[0]:.1%})", xlim=limits[0], ylim=limits[1], aspect="equal")
+            ax.legend(fontsize=8)
+        axes[0, 0].set_ylabel(f"PC2 ({variance[1]:.1%})")
+        fig.suptitle("Foreground vs background · identical PCA axes and limits")
+        for suffix in ("png", "svg"):
+            fig.savefig(output / f"foreground_background.{suffix}", dpi=160, bbox_inches="tight")
+        plt.close(fig)
+    bary = result.get("barycenter", {})
+    if bary.get("objective_history") and bary.get("gradient_rms_history"):
+        fig, axes = plt.subplots(1, 2, figsize=(10, 3.5), layout="constrained")
+        axes[0].plot(bary["objective_history"], color="#146b82")
+        axes[0].set(title="Shared-reference fit", xlabel="Iteration", ylabel="Mean foreground distance")
+        axes[1].semilogy(np.maximum(bary["gradient_rms_history"], np.finfo(float).tiny), color="#146b82")
+        axes[1].axhline(bary["tolerance"], color="#b87800", linestyle="--", label="Required tolerance")
+        axes[1].set(title="Convergence check", xlabel="Iteration", ylabel="Gradient RMS (log scale)")
+        axes[1].legend()
+        for suffix in ("png", "svg"):
+            fig.savefig(output / f"convergence.{suffix}", dpi=160, bbox_inches="tight")
+        plt.close(fig)
     fig, axes = plt.subplots(1, 3, figsize=(max(11, len(rows) * 2), 4.4), constrained_layout=True)
     for ax, key, label, color in zip(axes, ["C_i", "S_i", "r_i"], ["Consensus deviation C (lower = closer)", "FG/BG separation S (larger = clearer)", "Candidate risk r"], ["#317a9b", "#4e8a67", "#b06b35"]):
         values = [r[key] for r in rows]
@@ -163,6 +289,7 @@ def collection_row(result: dict) -> dict:
     row.update(result.get("config", {}))
     row["cache_hash"] = result.get("cache_hash", "")
     row["barycenter_converged"] = result.get("barycenter", {}).get("converged", result.get("barycenter", {}).get("diagnostics", {}).get("converged"))
+    row["barycenter_gradient_rms"] = result.get("barycenter", {}).get("final_mass_scaled_gradient_rms")
     row["warning_count"] = len(result.get("warnings", []))
     return row
 
@@ -190,25 +317,48 @@ def write_report(result: dict, output: Path, *, make_plots: bool = True) -> None
     body += '<nav>'
     if result.get("index_relative"):
         body += f'<a href="{esc(result["index_relative"])}">All experiments</a>'
+    if result.get("projection") and make_plots:
+        body += '<a href="#clouds">2D feature clouds</a>'
+    if result.get("alignment"):
+        body += '<a href="#alignment">Alignment examples</a>'
+    body += '<a href="#diagnostics">Convergence</a>'
     body += '<a href="per_dataset.csv">Dataset CSV</a><a href="collection.csv">Collection CSV</a><a href="components.json">Raw components &amp; provenance</a><a href="config_used.yaml">Resolved config</a></nav>'
     if (output / "samples.json").is_file():
         body += '<p><a href="samples.json">Sample identities</a></p>'
     body += '<div class="cards">' + ''.join(f'<div class="card">{esc(label)}<b>{number(c[key])}</b><small>{esc(desc)}</small></div>' for key, label, desc in [("G", "Global risk G", "Mean candidate risk"), ("L", "Selective risk L", "Population standard deviation"), ("L_rel", "Relative dispersion", "L / (G + ε)")]) + '</div>'
     body += f'<p>Risk formula: <code>{esc(cfg.get("risk_formula", "ratio"))}</code>; consensus for risk: <code>{esc(cfg.get("risk_consensus", "barycenter"))}</code>. C below always records the barycenter deviation.</p>'
+    body += f'<p>Sinkhorn scaling: <b>{esc(cfg.get("sinkhorn_scaling"))}</b> · OT regularization ε: {esc(cfg.get("ot_epsilon"))} · seed: {esc(cfg.get("seed"))}. Scaling controls numerical accuracy; compare convergence and scores with the original 0.9 run using the same seed.</p>'
     body += '<p>These are continuous research diagnostics. Compare runs with matching settings; no universal safe/unsafe thresholds have been calibrated. A large L means uneven risk, while G measures its average level. Inspect C and S before interpreting the ratio.</p>'
     if warnings:
         body += '<div class="warn"><b>Checks requiring attention</b><ul>' + ''.join(f'<li>{esc(w)}</li>' for w in warnings) + '</ul></div>'
     body += '<h2>Per-dataset components</h2><p>Click a column heading to sort. C measures disagreement with the shared foreground distribution; S measures separation from each dataset’s own background.</p><div class="panel">' + table(rows, fields, "components") + '</div>'
     if make_plots:
-        body += '<figure class="panel"><img src="figs/components.png" alt="Separate consensus, saliency and candidate risk plots"><figcaption><a href="figs/components.svg">Download vector figure</a></figcaption></figure>'
+        body += '<figure class="panel">' + _image(output, "figs/components.png", "Separate consensus, saliency and candidate risk plots") + '<figcaption><a href="figs/components.svg">Download vector figure</a></figcaption></figure>'
         if result.get("pairwise_foreground") is not None:
-            body += '<figure class="panel"><img src="figs/pairwise.png" alt="Pairwise foreground distance matrix"><figcaption><a href="figs/pairwise.svg">Download vector matrix</a></figcaption></figure>'
+            body += '<figure class="panel">' + _image(output, "figs/pairwise.png", "Pairwise foreground distance matrix") + '<figcaption><a href="figs/pairwise.svg">Download vector matrix</a></figcaption></figure>'
         if any("delta_i" in r for r in rows):
-            body += '<figure class="panel"><img src="figs/observed_effect.png" alt="Candidate risk versus observed joint-training effect"></figure>'
+            body += '<figure class="panel">' + _image(output, "figs/observed_effect.png", "Candidate risk versus observed joint-training effect") + '</figure>'
+        if result.get("projection") and (output / "cloud_projection.npz").is_file():
+            projection = result["projection"]
+            retained = sum(projection["explained_variance_ratio"])
+            body += f'<h2 id="clouds">Feature clouds and shared foreground reference</h2><p>Each dot is an embedding actually sampled for this run. Black stars are the fitted barycenter support points. One shared PCA projects foreground, background and the fitted barycenter onto the same axes, retaining <b>{retained:.1%}</b> of sampled feature variance.</p>'
+            body += f'<p>This is a display in 2D: distances, barycenter fitting and risk scores were calculated in {projection["input_dimension"]} dimensions. Overlap in this projection does not prove overlap in the full feature space. The barycenter is projected after fitting; it is not refitted in 2D.</p>'
+            for stem in ("foreground_clouds", "foreground_background"):
+                body += '<figure class="panel">' + _image(output, f"figs/{stem}.png", stem.replace("_", " ")) + f'<figcaption><a href="figs/{stem}.svg">Download vector figure</a></figcaption></figure>'
+            body += '<p><a href="cloud_projection.npz">Projection coordinates and shared PCA axes</a> · Point order is recorded in the raw components and corresponds to sample identities.</p>'
     body += '<h2>Sampling and filtering</h2><div class="panel">' + table(rows, counts, "counts") + '</div>'
+    alignment = result.get("alignment", {})
+    if alignment:
+        body += '<h2 id="alignment">Image / mask / patch alignment</h2><p>Up to three reproducible random training images per dataset, reconstructed using the cache’s original preprocessing. Left: actual processed input. Middle: foreground mask in green. Right: foreground (green), background (blue), mixed patches (amber). Circles and crosses mark foreground and background patches sampled for this metric run.</p>'
+        body += '<p>Check that the green mask follows the target structures and that patch classes follow mask coverage. Black surroundings remain visible. “Near-black” means all processed RGB channels ≤ 2/255; this is a visual diagnostic, not a tissue detector or an exclusion rule. Percentages describe these example images only.</p>'
+        for preview in alignment.get("previews", []):
+            caption = f'{preview["dataset"]} · {preview["sample_id"]} · cached occupancy verified · crop: {preview["crop_box_xyxy"]} · near-black pixels: {preview["near_black_pixel_fraction"]:.1%}'
+            body += '<figure class="panel">' + _image(output, preview["figure"], caption) + f'<figcaption>{esc(caption)} · <a href="{esc(preview["figure"])}">Download triptych</a></figcaption></figure>'
     bary = result.get("barycenter", {})
-    body += '<h2>Method and numerical diagnostics</h2><div class="panel">'
+    body += '<h2 id="diagnostics">Method and numerical diagnostics</h2><div class="panel">'
     body += f'<p>Barycenter: <b>{"converged" if bary.get("converged") else "check convergence"}</b> · support atoms: {esc(bary.get("support_size"))} · iterations: {esc(bary.get("iterations"))} · final gradient RMS: {esc(number(bary.get("final_mass_scaled_gradient_rms")))}</p>'
+    if make_plots and (output / "figs/convergence.png").is_file():
+        body += _image(output, "figs/convergence.png", "Barycenter objective and convergence threshold")
     if (output / "barycenter.npz").is_file():
         body += '<p><a href="barycenter.npz">Download fitted barycenter support</a></p>'
     if (output / "pca.npz").is_file():
@@ -240,7 +390,7 @@ def summarize_results(root: Path) -> list[dict]:
             invalid.append(f"{path.relative_to(root)}: {exc}")
     write_csv(root / "all_collections.csv", rows)
     write_csv(root / "all_datasets.csv", datasets)
-    fields = [("collection_id", "Collection"), ("backbone", "Backbone"), ("run_id", "Run"), ("G", "Global G"), ("L", "Selective L"), ("pairwise_G", "Pairwise G"), ("seed", "Seed"), ("tau_fg", "τ FG"), ("tau_bg", "τ BG"), ("ot_epsilon", "OT ε"), ("risk_formula", "Risk formula"), ("warning_count", "Warnings")]
+    fields = [("collection_id", "Collection"), ("backbone", "Backbone"), ("run_id", "Run"), ("G", "Global G"), ("L", "Selective L"), ("pairwise_G", "Pairwise G"), ("seed", "Seed"), ("sinkhorn_scaling", "Sinkhorn scaling"), ("barycenter_converged", "Converged"), ("barycenter_gradient_rms", "Gradient RMS"), ("tau_fg", "τ FG"), ("tau_bg", "τ BG"), ("ot_epsilon", "OT ε"), ("risk_formula", "Risk formula"), ("warning_count", "Warnings")]
     body = '<div class="tag">Experiment navigator</div><h1>Joint-training compatibility</h1>'
     body += f'<p>{len(rows)} completed metric runs. Filter by collection, backbone, seed or run ID, then open the run for components, plots and numerical checks.</p><nav><a href="all_collections.csv">All collection results (CSV)</a><a href="all_datasets.csv">All dataset components (CSV)</a></nav>'
     body += '<p>Compare matching threshold, normalization, OT and sampling settings. G is average risk; L is its unevenness across datasets. These values do not yet establish safe/unsafe categories.</p><div class="panel">' + table(rows, fields, "runs", {"run_id": lambda row: row["report"]}) + '</div>'

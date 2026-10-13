@@ -104,6 +104,67 @@ safe/unsafe thresholds. Compare matching settings and inspect near-zero saliency
 or convergence warnings. The separately saved pairwise baseline is the mean
 foreground distance to all other datasets.
 
+Each new metric run also shows foreground clouds and the fitted barycenter in
+one shared 2D PCA, plus foreground/background panels on identical axes. PCA is
+fitted on balanced metric samples after their metric preprocessing; the fitted
+barycenter is projected with the same transform. These plots never change the
+metric or fit a new barycenter in 2D. Axis labels report explained variance;
+2D overlap does not prove similarity in the original feature space. Coordinates
+and display axes are saved in `cloud_projection.npz`, in the sample order recorded
+in `components.json` and `samples.json`.
+
+Three reproducible random training-image triptychs per dataset are saved under
+`figs/alignment/` and included in the report: processed image, foreground-mask
+overlay, and patch classes with sampled locations. They reload only those source
+images/masks using the cache's saved preprocessing, check size/mtime and geometry,
+and compare reconstructed occupancies to the cached values. No backbone runs.
+Missing/changed source files produce an explicit preview warning. The near-black
+fraction is only an example-image diagnostic (all processed RGB channels <= 2/255),
+not a tissue mask, dataset-wide estimate, or automatic exclusion rule.
+
+PNG figures are embedded in the per-run HTML, so downloading that HTML alone
+preserves the visual report. Download the whole result folder for CSV/JSON/NPZ,
+vector figures, individual triptychs and navigation between runs.
+
+The shared config now sets `sinkhorn_scaling: 0.99` for a numerical comparison
+with the initial 0.9 run, keeping seed 42, OT epsilon, sampling and the risk
+equation unchanged. Reuse the existing cluster cache with:
+
+```bash
+bash slurm/submit_joint_metric.sh --collection em --backbone dinov3 --metrics-only
+```
+
+The index includes scaling, convergence and final gradient RMS to compare runs;
+each report plots the convergence history. Increasing scaling is an accuracy
+check, not a guarantee that the barycenter optimizer will converge.
+
+### Kasthuri black surroundings
+
+The standard EM segmentation configs use full-image longest-edge resizing
+(1022 rounded down to a multiple of 16 gives a 1008-pixel long edge for DINOv3).
+Kasthuri has no center crop or border-exclusion mask in those configs. Normal
+training/evaluation uses bicubic image resize, nearest-neighbor mask resize and
+ImageNet normalization. The joint metric uses the same image geometry, with
+area-based masks to retain fractional patch occupancy. Separate TRIPLET feature
+analysis configs/utilities support center crops; they are not used by standard
+Kasthuri segmentation or this metric.
+
+Black regions labeled background are eligible background samples. They could
+increase measured FG/BG separation S and consequently lower C/S; their effect
+on the foreground representation and C must be tested. Foreground Dice/IoU does
+not reward true-negative black pixels directly, but predictions of foreground
+there count as false positives. Background/mean-class scores can benefit from
+easy background, and training loss also sees those pixels. Do not interpret
+large S as proof of target/tissue separability until border effects are checked.
+
+In a local replay of the original seed-42 Kasthuri preprocessing and background
+sampling, 216 of 512 sampled background patches (42.2%) had at least 95%
+near-black pixels (all RGB channels <= 2/255). The replay reproduced the
+original report's exact Kasthuri patch counts: 305,235 total, 4,647 clear
+foreground, 290,190 clear background, 10,398 mixed. This establishes substantial
+border exposure in that sample, but only an exclusion ablation can quantify its
+effect on S and the risk ratio.
+
 The distance is GeomLoss Sinkhorn divergence with squared Euclidean cost:
 `2 * SamplesLoss(p=2, blur=sqrt(ot_epsilon/2))`. All empirical measures have unit
 mass. Sampling uses a common cap reduced to the smallest available class; every

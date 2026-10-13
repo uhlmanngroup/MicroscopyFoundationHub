@@ -1,7 +1,8 @@
 """Stage B orchestration: stream cached arrays, compute metrics, and save provenance.
 
-No backbone or dataset loader is used by this module. Unselected embeddings are
-never concatenated: memory scales with occupancy arrays and selected OT samples.
+No backbone is loaded. Optional alignment previews reload a few source images.
+Unselected embeddings are never concatenated: memory scales with occupancy
+arrays and selected OT samples.
 """
 from __future__ import annotations
 
@@ -23,11 +24,11 @@ import yaml
 from dino_peft.config import deep_merge, load_config, repo_root
 from dino_peft.utils.paths import write_run_info
 from .joint_cache import load_cache_manifest, read_shard
-from .joint_metric import MetricConfig, compute_metric, risk_from_components, sample_indices
-from .joint_report import join_performance, summarize_results, write_json, write_report
+from .joint_metric import MetricConfig, compute_metric, risk_from_components, sample_indices, _rng
+from .joint_report import alignment_triptych, join_performance, save_cloud_projection, summarize_results, write_json, write_report
 
 
-REPORT_VERSION = 1
+REPORT_VERSION = 2
 
 
 def digest(value: object) -> str:
@@ -107,6 +108,59 @@ def _implementation_hash() -> str:
     return hashlib.sha256(b"".join((root / name).read_bytes() for name in ("joint_metric.py", "joint_run.py", "joint_report.py"))).hexdigest()
 
 
+def save_alignment_previews(cache_dir: Path, manifest: dict, entries: list[dict], identities: dict,
+                            config: MetricConfig, output: Path) -> dict:
+    """Reload three reproducible random images per dataset; never run a model.
+
+    Use the cache's extraction recipe, not today's training config. Verify file
+    identity, geometry and occupancies before describing a preview as aligned.
+    """
+    from .joint_cache import _AlignedDataset, occupancy_on_grid
+    report = {"seed": config.seed, "previews": [], "warnings": []}
+    try:
+        extraction = json.loads((cache_dir / "extraction_identity.json").read_text())
+        sources = {source["id"]: source for source in extraction["sources"]}
+        original_files = {p: (size, mtime) for p, size, mtime in extraction["inputs"]}
+    except (OSError, KeyError, ValueError) as exc:
+        report["warnings"].append(f"Alignment previews unavailable: {exc}")
+        return report
+    for entry in entries:
+        name = entry["id"]
+        try:
+            source = sources[name]
+            dataset = _AlignedDataset(source)
+            positions = {ip.relative_to(dataset.dataset.image_dir).as_posix(): i for i, (ip, _) in enumerate(dataset.dataset.pairs)}
+            chosen = sorted(_rng(config.seed, name, "alignment_preview").choice(len(entry["shards"]), min(3, len(entry["shards"])), replace=False))
+            for index in chosen:
+                shard = entry["shards"][index]
+                position = positions[shard["sample_id"]]
+                for path in dataset.dataset.pairs[position]:
+                    if original_files[str(path)] != (path.stat().st_size, path.stat().st_mtime_ns):
+                        raise ValueError(f"Source file changed since extraction: {path}")
+                image, mask, meta = dataset[position]
+                for key in ("sample_id", "original_image_shape", "processed_shape", "crop_box_xyxy"):
+                    if meta[key] != shard[key]:
+                        raise ValueError(f"Cached geometry differs for {shard['sample_id']}: {key}")
+                grid = shard["grid_shape"]
+                patch = None if manifest["backbone"]["name"] == "resnet50" else mask.shape[0] // grid[0]
+                q = occupancy_on_grid(mask, grid, patch_size=patch)
+                cached_q = read_shard(cache_dir, entry, shard, embeddings=False)[1]
+                if not np.allclose(q, cached_q, rtol=0, atol=1e-6):
+                    raise ValueError(f"Mask occupancy differs from cache: {shard['sample_id']}")
+                selected = {kind: [p["token_index"] for p in points if p["shard"] == shard["path"]] for kind, points in identities[name].items()}
+                relative = f"figs/alignment/{name}-{index:07d}.png"
+                stats = alignment_triptych(output / relative, image, mask, q, grid,
+                                          normalization=source["preprocessing"]["normalization"],
+                                          tau_fg=config.tau_fg, tau_bg=config.tau_bg,
+                                          title=f"{name} · {shard['sample_id']} · seed {config.seed}", selected=selected)
+                report["previews"].append({"dataset": name, "sample_id": shard["sample_id"], "figure": relative,
+                                           "cache_occupancy_verified": True, "processed_shape": meta["processed_shape"],
+                                           "crop_box_xyxy": meta["crop_box_xyxy"], **stats})
+        except (OSError, KeyError, ValueError, RuntimeError) as exc:
+            report["warnings"].append(f"Alignment preview unavailable for {name}: {exc}")
+    return report
+
+
 def run_one(cfg: dict, *, update_index: bool = True) -> Path:
     cache_dir = Path(cfg["cache_dir"]).expanduser().resolve()
     config = MetricConfig(**cfg.get("metric", {}))
@@ -164,6 +218,10 @@ def run_one(cfg: dict, *, update_index: bool = True) -> Path:
         resolved["results_root"] = str(root)
         (stage / "config_used.yaml").write_text(yaml.safe_dump(resolved, sort_keys=True))
         write_json(stage / "samples.json", {"seed": config.seed, "cache_hash": manifest["extraction_hash"], "datasets": identities})
+        print("[joint-metric] plotting sampled clouds and checking random image/mask alignments", flush=True)
+        save_cloud_projection(result, distributions, stage)
+        result["alignment"] = save_alignment_previews(cache_dir, manifest, entries, identities, config, stage)
+        result["warnings"].extend(result["alignment"]["warnings"])
         bary = result.get("barycenter", {})
         if "support" in bary:
             support = bary.pop("support")
@@ -247,10 +305,13 @@ def recompute(components: Path, output: Path, *, formula: str = "ratio", epsilon
         raise FileExistsError(f"Use an empty output directory; refusing to overwrite {output}")
     output.mkdir(parents=True, exist_ok=True)
     import shutil
-    for name in ("samples.json", "barycenter.npz", "pca.npz"):
+    for name in ("samples.json", "barycenter.npz", "pca.npz", "cloud_projection.npz"):
         path = source_path.parent / name
         if path.is_file():
             shutil.copy2(path, output / name)
+    alignment_dir = source_path.parent / "figs" / "alignment"
+    if alignment_dir.is_dir():
+        shutil.copytree(alignment_dir, output / "figs" / "alignment")
     (output / "config_used.yaml").write_text(yaml.safe_dump({"source_components": str(source_path), "metric": result["config"]}, sort_keys=True))
     write_report(result, output)
     return output

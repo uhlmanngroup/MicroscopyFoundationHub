@@ -41,11 +41,12 @@ metric:
   seed: 42
   l2_normalize: true
   ot_epsilon: 0.05
+  sinkhorn_scaling: 0.99 # More accurate inner solve; compare with the original 0.9 run.
   barycenter_support: 64
   barycenter_max_iterations: 100
   risk_formula: ratio
   risk_epsilon: 1.0e-8
-  # Optional: pca_dim, sinkhorn_scaling, barycenter_tolerance, device, dtype.
+  # Optional: pca_dim, barycenter_tolerance, device, dtype.
   # Their defaults live in MetricConfig, rather than being repeated here.
 
 # Applied only with --sensitivity. Add other metric.<field>: [values] axes here.

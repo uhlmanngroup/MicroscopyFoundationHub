@@ -10,7 +10,7 @@
 # which is how the same config runs on the cluster and on a laptop.
 
 # Datasets. Expected to contain EM/, deepbacs/, monusac_448/, domain_shift/.
-data_root: /home/cfuste/data/datasets
+data_root: /home/cfuste/data/DINO-LoRA/datasets
 
 # Current EM source location for the joint-metric reports; kept separate from
 # data_root so other training collections retain their existing paths.

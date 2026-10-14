@@ -48,6 +48,39 @@ def pair_by_sorted(imgs, masks):
         raise RuntimeError(f"sorted pairing needs equal counts, got images={len(imgs)} masks={len(masks)}")
     return list(zip(imgs, masks))
 
+def pair_lucchi(imgs, masks):
+    """Match Lucchi's maskNNNN images to N masks by numeric slice ID."""
+    def slice_id(path, prefix):
+        stem = path.stem
+        if prefix and stem.startswith(prefix):
+            stem = stem[len(prefix):]
+        if not stem.isdigit():
+            raise ValueError(f"Unexpected Lucchi filename: {path.name}")
+        return int(stem)
+
+    mask_by_id = {}
+    for mask in masks:
+        key = slice_id(mask, "")
+        if key in mask_by_id:
+            raise ValueError(f"Duplicate Lucchi mask ID {key}: {mask_by_id[key]} and {mask}")
+        mask_by_id[key] = mask
+
+    pairs = []
+    seen_images = set()
+    for image in imgs:
+        key = slice_id(image, "mask")
+        if key in seen_images:
+            raise ValueError(f"Duplicate Lucchi image ID {key}: {image}")
+        seen_images.add(key)
+        if key not in mask_by_id:
+            raise ValueError(f"Missing Lucchi mask for {image.name} (ID {key})")
+        pairs.append((image, mask_by_id[key]))
+
+    extra_masks = set(mask_by_id) - seen_images
+    if extra_masks:
+        raise ValueError(f"Lucchi masks without images: {sorted(extra_masks)[:10]}")
+    return pairs
+
 def ensure_out_dirs(root: Path):
     for split in ("train","test"):
         (root / split / "images").mkdir(parents=True, exist_ok=True)
@@ -56,6 +89,11 @@ def ensure_out_dirs(root: Path):
 def stage(src: Path, dst: Path):
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
+        if STAGE_MODE == "symlink" and dst.resolve() != src.resolve():
+            raise RuntimeError(
+                f"Existing staged file points to the wrong source: {dst} -> {dst.resolve()}; "
+                f"expected {src.resolve()}. Rebuild the composed dataset in a fresh directory."
+            )
         return
     if STAGE_MODE == "copy":
         shutil.copy2(src, dst)
@@ -133,13 +171,13 @@ def main():
     if not li_tr or not lm_tr:
         print("WARNING: Lucchi Train_* empty or unmatched; skipping Lucchi train.")
     else:
-        lucchi_train = pair_by_stem(li_tr, lm_tr) or pair_by_sorted(li_tr, lm_tr)
+        lucchi_train = pair_lucchi(li_tr, lm_tr)
         _ = stage_pairs(lucchi_train, OUT_ROOT / "train", "lucchi", "train", start_idx=0, mapping_rows=mapping_rows, counts=counts)
 
     if not li_te or not lm_te:
         print("WARNING: Lucchi Test_* empty or unmatched; skipping Lucchi test.")
     else:
-        lucchi_test = pair_by_stem(li_te, lm_te) or pair_by_sorted(li_te, lm_te)
+        lucchi_test = pair_lucchi(li_te, lm_te)
         _ = stage_pairs(lucchi_test, OUT_ROOT / "test", "lucchi", "test", start_idx=0, mapping_rows=mapping_rows, counts=counts)
 
     # ---------- write mapping ----------

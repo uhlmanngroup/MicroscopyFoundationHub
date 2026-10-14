@@ -1,4 +1,4 @@
-"""Joint-training compatibility: cache, compute, risk, summary, or SLURM submit."""
+"""Joint-training direction alignment: cache, compute, summary, or SLURM submit."""
 from __future__ import annotations
 
 import argparse
@@ -14,7 +14,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from dino_peft.config import load_config, repo_root
-from dino_peft.analysis.joint_run import resolve_experiment, run_from_config, recompute, expand_runs, refresh_alignment_report
+from dino_peft.analysis.joint_run import resolve_experiment, run_from_config, expand_runs, refresh_alignment_report
 from dino_peft.analysis.joint_metric import MetricConfig
 from dino_peft.analysis.joint_report import summarize_results
 
@@ -99,13 +99,6 @@ def main():
             p.add_argument("--dry-run", action="store_true")
             p.add_argument("--previews-only", action="store_true")
             p.add_argument("--components", type=Path, help="Existing run/components.json to repair")
-    p = commands.add_parser("risk")
-    p.add_argument("--components", required=True, type=Path)
-    p.add_argument("--out-dir", required=True, type=Path)
-    p.add_argument("--formula", choices=["ratio", "consensus"], default="ratio")
-    p.add_argument("--consensus", choices=["barycenter", "pairwise"], default="barycenter")
-    p.add_argument("--epsilon", type=float, default=1e-8)
-    p.add_argument("--performance-csv")
     p = commands.add_parser("summary")
     p.add_argument("--results-root", type=Path, required=True)
     p = commands.add_parser("previews")
@@ -113,9 +106,7 @@ def main():
     p.add_argument("--cfg", type=Path, default=repo_root() / "configs/cluster/joint_metric.yaml")
     args = parser.parse_args()
     try:
-        if args.action == "risk":
-            recompute(args.components, args.out_dir, formula=args.formula, epsilon=args.epsilon, consensus=args.consensus, performance_csv=args.performance_csv)
-        elif args.action == "summary":
+        if args.action == "summary":
             summarize_results(args.results_root)
         elif args.action == "previews":
             refresh_alignment_report(args.components, load_config(args.cfg))

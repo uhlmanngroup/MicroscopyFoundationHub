@@ -1,9 +1,4 @@
-"""Stage B orchestration: stream cached arrays, compute metrics, and save provenance.
-
-No backbone is loaded. Optional alignment previews reload a few source images.
-Unselected embeddings are never concatenated: memory scales with occupancy
-arrays and selected OT samples.
-"""
+"""Analyze cached spatial features; the pretrained backbone is never loaded."""
 from __future__ import annotations
 
 import hashlib
@@ -25,11 +20,11 @@ import yaml
 from dino_peft.config import deep_merge, load_config, repo_root
 from dino_peft.utils.paths import write_run_info
 from .joint_cache import _resolve_sources, _shard_path, load_cache_manifest, read_shard
-from .joint_metric import MetricConfig, compute_metric, near_foreground_background, risk_from_components, sample_indices, _rng
+from .joint_metric import MetricConfig, direction_alignment, local_directions, run_linear_probes, _rng
 from .joint_report import alignment_triptych, join_performance, save_cloud_projection, summarize_results, write_json, write_report
 
 
-REPORT_VERSION = 3
+REPORT_VERSION = 4
 
 
 def digest(value: object) -> str:
@@ -70,49 +65,64 @@ def resolve_experiment(cfg: dict, collection: str, backbone: str) -> dict:
     }
 
 
-def load_occupancies(cache_dir: Path, entries: list[dict], config: MetricConfig) -> tuple[dict, dict]:
-    occupancies, near = {}, {}
-    for entry in entries:
-        chunks, nearby = [], []
-        for shard in entry["shards"]:
-            q = read_shard(cache_dir, entry, shard, embeddings=False)[1]
-            chunks.append(q)
-            if config.background_sampling == "near_foreground":
-                nearby.append(near_foreground_background(
-                    q, shard["grid_shape"], tau_fg=config.tau_fg,
-                    tau_bg=config.tau_bg, radius=config.near_foreground_radius_patches))
-        occupancies[entry["id"]] = np.concatenate(chunks)
-        if nearby:
-            near[entry["id"]] = np.concatenate(nearby)
-    return occupancies, near
-
-
-def load_selected(cache_dir: Path, entries: list[dict], selection: dict) -> tuple[dict, dict]:
-    distributions, identities = {}, {}
-    for entry in entries:
-        name, dim = entry["id"], entry["embedding_dim"]
-        indices = selection["indices"][name]
-        distributions[name] = {kind: np.empty((len(ix), dim), dtype=np.float32) for kind, ix in indices.items()}
-        identities[name] = {kind: [None] * len(ix) for kind, ix in indices.items()}
-        start = 0
-        for shard in entry["shards"]:
-            stop = start + shard["num_embeddings"]
-            needed = {kind: np.flatnonzero((ix >= start) & (ix < stop)) for kind, ix in indices.items()}
-            if any(len(pos) for pos in needed.values()):
-                z, _ = read_shard(cache_dir, entry, shard)
+def analyze_cached_images(cache_dir: Path, entries: list[dict], config: MetricConfig):
+    """One cache pass for exact local vectors and balanced per-image probe samples."""
+    summaries, samples, identities, counts = {}, {}, {}, {}
+    vectors, datasets, images, sample_ids, tokens, neighbor_counts = [], [], [], [], [], []
+    for dataset_index, entry in enumerate(entries):
+        name = entry["id"]
+        summaries[name], samples[name] = [], {}
+        identities[name] = {"foreground": [], "background": []}
+        counts[name] = {"n_available": 0, "n_foreground_all": 0, "n_background_all": 0,
+                        "n_background_eligible": 0, "n_ambiguous": 0,
+                        "n_images_total": len(entry["shards"]), "n_images_skipped": 0,
+                        "n_skipped_no_local_background": 0}
+        offset = 0
+        for image_index, shard in enumerate(entry["shards"]):
+            z, q = read_shard(cache_dir, entry, shard)
+            local = local_directions(z, q, shard["grid_shape"], config)
+            for key in ("n_foreground_all", "n_background_all", "n_background_eligible", "n_ambiguous"):
+                counts[name][key] += local[key]
+            counts[name]["n_skipped_no_local_background"] += local["n_skipped_no_local_background"]
+            counts[name]["n_available"] += len(q)
+            fg, bg = local["foreground_indices"], local["background_indices"]
+            if not len(fg) or not len(bg):
+                counts[name]["n_images_skipped"] += 1
+                offset += len(q)
+                continue
+            d = local["vectors"]
+            summaries[name].append({"sample_id": shard["sample_id"], "n_vectors": len(d),
+                                    "n_skipped_no_local_background": local["n_skipped_no_local_background"],
+                                    "mean_vector": d.mean(axis=0, dtype=np.float64),
+                                    "mean_magnitude": float(np.linalg.norm(d, axis=1).mean()),
+                                    "mean_foreground": local["features"][fg].mean(axis=0, dtype=np.float64),
+                                    "mean_background": local["local_background_centroids"].mean(axis=0, dtype=np.float64)})
+            vectors.append(d)
+            datasets.append(np.full(len(d), dataset_index, dtype=np.int16))
+            images.append(np.full(len(d), image_index, dtype=np.int32))
+            sample_ids.append(np.full(len(d), shard["sample_id"]))
+            tokens.append(fg.astype(np.int32))
+            neighbor_counts.append(local["local_background_counts"])
+            samples[name][shard["sample_id"]] = {}
+            for kind, candidates in (("foreground", fg), ("background", bg)):
+                cap = min(config.probe_patches_per_image_per_class, len(candidates))
+                chosen = np.sort(_rng(config.seed, name, shard["sample_id"], kind).choice(
+                    candidates, size=cap, replace=False))
+                samples[name][shard["sample_id"]][kind] = local["features"][chosen]
                 width = shard["grid_shape"][1]
-                for kind, positions in needed.items():
-                    local = indices[kind][positions] - start
-                    distributions[name][kind][positions] = z[local]
-                    for pos, token in zip(positions, local):
-                        identities[name][kind][int(pos)] = {
-                            "index": int(start + token), "sample_id": shard["sample_id"],
-                            "shard": shard["path"], "token_index": int(token),
-                            "row": int(token // width), "column": int(token % width)}
-            start = stop
-        if any(any(v is None for v in values) for values in identities[name].values()):
-            raise ValueError(f"Sampled indices outside cache for {name}")
-    return distributions, identities
+                identities[name][kind].extend({"index": int(offset + token),
+                                               "sample_id": shard["sample_id"], "shard": shard["path"],
+                                               "token_index": int(token), "row": int(token // width),
+                                               "column": int(token % width)} for token in chosen)
+            offset += len(q)
+        if len(samples[name]) < 3:
+            raise ValueError(f"{name}: only {len(samples[name])} images have local FG/BG pairs; three are needed for image-level probe splits")
+    local_vectors = {"vectors": np.concatenate(vectors), "dataset_index": np.concatenate(datasets),
+                     "image_index": np.concatenate(images), "foreground_token_index": np.concatenate(tokens),
+                     "sample_id": np.concatenate(sample_ids),
+                     "local_background_count": np.concatenate(neighbor_counts),
+                     "dataset_order": np.asarray([entry["id"] for entry in entries])}
+    return summaries, samples, identities, counts, local_vectors
 
 
 def _implementation_hash() -> str:
@@ -174,6 +184,7 @@ def save_alignment_previews(cache_dir: Path, manifest: dict, entries: list[dict]
                 stats = alignment_triptych(output / relative, image, mask, q, grid,
                                           normalization=source["preprocessing"]["normalization"],
                                           tau_fg=config.tau_fg, tau_bg=config.tau_bg,
+                                          radius=config.near_foreground_radius_patches,
                                           title=f"{name} · {shard['sample_id']} · seed {config.seed}", selected=selected)
                 report["previews"].append({"dataset": name, "sample_id": shard["sample_id"], "figure": relative,
                                            "source": "source_files", "relocated": str(dataset.dataset.image_dir) != source["image_dir"],
@@ -222,7 +233,7 @@ def run_one(cfg: dict, *, update_index: bool = True) -> Path:
     entries = [all_entries[name] for name in sorted(requested)]
     perf_path = cfg.get("performance_csv")
     perf_hash = hashlib.sha256(Path(perf_path).read_bytes()).hexdigest() if perf_path else None
-    versions = {name: importlib.metadata.version(name) for name in ("numpy", "torch", "geomloss")}
+    versions = {name: importlib.metadata.version(name) for name in ("numpy", "torch")}
     fingerprint = {"versions": versions, "report_version": REPORT_VERSION, "implementation_hash": _implementation_hash(), "metric": asdict(config), "cache_hash": manifest["extraction_hash"], "manifest_hash": digest(manifest), "collection_id": collection, "dataset_ids": sorted(requested), "backbone": backbone, "performance_hash": perf_hash}
     run_id = digest(fingerprint)[:16]
     root = Path(cfg["results_root"]).expanduser().resolve()
@@ -236,18 +247,29 @@ def run_one(cfg: dict, *, update_index: bool = True) -> Path:
             summarize_results(root)
         return output
     output.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[joint-metric] {collection}/{backbone}/{run_id}: counting cached occupancies", flush=True)
-    occupancies, nearby = load_occupancies(cache_dir, entries, config)
-    selection = sample_indices(occupancies, config, near_background=nearby)
-    distributions, identities = load_selected(cache_dir, entries, selection)
-    del occupancies
-    for name, counts in selection["counts"].items():
-        print(f"[joint-metric] {name}: {counts}", flush=True)
-    print("[joint-metric] computing Sinkhorn components and equal-weight barycenter", flush=True)
-    result = compute_metric(distributions, config)
+    print(f"[joint-metric] {collection}/{backbone}/{run_id}: computing local directions from cached images", flush=True)
+    summaries, samples, identities, counts, local_vectors = analyze_cached_images(cache_dir, entries, config)
+    result = direction_alignment(summaries, config)
+    print("[joint-metric] fitting frozen-feature individual and joint linear probes", flush=True)
+    probe, probe_weights = run_linear_probes(samples, config)
+    result["linear_probe"] = {key: value for key, value in probe.items() if key != "split"}
+    result["config"] = asdict(config)
+    result["warnings"] = []
     for row in result["per_dataset"]:
-        row.update(selection["counts"][row["dataset"]])
-    result.update({"schema_version": 1, "backbone": backbone, "collection_id": collection, "run_id": run_id, "cache_dir": str(cache_dir), "cache_hash": manifest["extraction_hash"], "fingerprint": fingerprint, "created_utc": datetime.now(timezone.utc).isoformat(), "cache_metadata": {k: v for k, v in manifest.items() if k != "datasets"}, "balanced_sample_count": selection["balanced_sample_count"], "index_relative": "../../../index.html"})
+        name = row["dataset"]
+        row.update(counts[name])
+        row["foreground_coverage"] = row["n_local_vectors"] / row["n_foreground_all"] if row["n_foreground_all"] else 0.0
+        row.update(next(probe_row for probe_row in probe["per_dataset"] if probe_row["dataset"] == name))
+        row["n_probe_foreground"] = len(identities[name]["foreground"])
+        row["n_probe_background"] = len(identities[name]["background"])
+        print(f"[joint-metric] {name}: A={row['A_i']:.4f}, M={row['M_i']:.4f}, local vectors={row['n_local_vectors']}, skipped={row['n_skipped_no_local_background']}", flush=True)
+    result.update({"schema_version": 2, "backbone": backbone, "collection_id": collection, "run_id": run_id,
+                   "cache_dir": str(cache_dir), "cache_hash": manifest["extraction_hash"],
+                   "fingerprint": fingerprint, "created_utc": datetime.now(timezone.utc).isoformat(),
+                   "cache_metadata": {k: v for k, v in manifest.items() if k != "datasets"},
+                   "index_relative": "../../../index.html",
+                   "local_vectors_artifact": "local_vectors.npz", "probe_weights_artifact": "probe_weights.npz",
+                   "probe_split_artifact": "probe_split.json"})
     if perf_path:
         join_performance(result, perf_path)
     # Atomic directory publication: incomplete/failed runs never appear in indexes.
@@ -260,21 +282,21 @@ def run_one(cfg: dict, *, update_index: bool = True) -> Path:
         resolved["results_root"] = str(root)
         (stage / "config_used.yaml").write_text(yaml.safe_dump(resolved, sort_keys=True))
         write_json(stage / "samples.json", {"seed": config.seed, "cache_hash": manifest["extraction_hash"], "datasets": identities})
+        write_json(stage / "probe_split.json", probe["split"])
+        np.savez_compressed(stage / "local_vectors.npz", **local_vectors)
+        np.savez_compressed(stage / "probe_weights.npz", **probe_weights)
+        display = {}
+        for name in sorted(samples):
+            display[name] = {}
+            for kind in ("foreground", "background"):
+                cloud = np.concatenate([image[kind] for image in samples[name].values()])
+                cap = min(512, len(cloud))
+                display[name][kind] = cloud[_rng(config.seed, name, kind, "projection").choice(len(cloud), cap, replace=False)]
         print("[joint-metric] plotting sampled clouds and checking random image/mask alignments", flush=True)
-        save_cloud_projection(result, distributions, stage)
+        save_cloud_projection(result, display, stage)
         current_sources = {source["id"]: source for source in _resolve_sources(cfg)}
         result["alignment"] = save_alignment_previews(cache_dir, manifest, entries, identities, config, stage, current_sources)
         result["warnings"].extend(result["alignment"]["warnings"])
-        bary = result.get("barycenter", {})
-        if "support" in bary:
-            support = bary.pop("support")
-            weights = bary.pop("weights", None)
-            np.savez_compressed(stage / "barycenter.npz", support=np.asarray(support), weights=np.asarray(weights))
-            bary["artifact"] = "barycenter.npz"
-        transform = result.get("transform", {})
-        if "pca_components" in transform:
-            np.savez_compressed(stage / "pca.npz", components=np.asarray(transform.pop("pca_components")), mean=np.asarray(transform.pop("pca_mean")))
-            transform["artifact"] = "pca.npz"
         write_run_info(stage, {"cache_hash": manifest["extraction_hash"], "run_id": run_id})
         write_report(result, stage)
         if output.exists():
@@ -317,10 +339,12 @@ def run_from_config(cfg: dict, *, sweep: dict | None = None, update_index: bool 
 
 
 def refresh_alignment_report(components: Path, joint_cfg: dict) -> Path:
-    """Repair report previews from relocated sources without rerunning OT."""
+    """Repair current-format report previews from relocated source images."""
     components = components.resolve()
     output = components.parent
     result = json.loads(components.read_text())
+    if result.get("schema_version") != 2:
+        raise ValueError("Preview refresh supports only direction-alignment reports; keep historical reports unchanged")
     cache_dir = Path(result["cache_dir"])
     manifest = load_cache_manifest(cache_dir)
     entries_by_id = {entry["id"]: entry for entry in manifest["datasets"]}
@@ -343,48 +367,4 @@ def refresh_alignment_report(components: Path, joint_cfg: dict) -> Path:
     result["alignment_refreshed_utc"] = datetime.now(timezone.utc).isoformat()
     write_report(result, output)
     summarize_results(output.parents[2])
-    return output
-
-
-def recompute(components: Path, output: Path, *, formula: str = "ratio", epsilon: float = 1e-8, consensus: str = "barycenter", performance_csv: str | None = None) -> Path:
-    source = json.loads(components.read_text())
-    if consensus not in {"barycenter", "pairwise"}:
-        raise ValueError("consensus must be barycenter or pairwise")
-    result = deepcopy(source)
-    rows = result["per_dataset"]
-    # C_i is kept as the barycenter raw component even when a different consensus is selected.
-    key = "C_i" if consensus == "barycenter" else "C_pairwise"
-    risk = risk_from_components([r[key] for r in rows], [r["S_i"] for r in rows], formula=formula, epsilon=epsilon)
-    pair = risk_from_components([r["C_pairwise"] for r in rows], [r["S_i"] for r in rows], formula=formula, epsilon=epsilon)
-    for i, row in enumerate(rows):
-        row["r_i"], row["r_pairwise"] = risk["r"][i], pair["r"][i]
-    result["collection"].update({k: risk[k] for k in ("G", "L", "L_rel")})
-    result["collection"].update({"pairwise_" + k: pair[k] for k in ("G", "L", "L_rel")})
-    result["config"].update({"risk_formula": formula, "risk_epsilon": epsilon, "risk_consensus": consensus})
-    source_path = components.resolve()
-    result["index_relative"] = None
-    result["postprocess_source"] = str(source_path)
-    result["created_utc"] = datetime.now(timezone.utc).isoformat()
-    result["source_fingerprint"] = result.get("fingerprint")
-    result["fingerprint"] = {"source_components_sha256": hashlib.sha256(components.read_bytes()).hexdigest(),
-                             "formula": formula, "epsilon": epsilon, "consensus": consensus,
-                             "implementation_hash": _implementation_hash(),
-                             "performance_csv_sha256": hashlib.sha256(Path(performance_csv).read_bytes()).hexdigest() if performance_csv else None}
-    result["run_id"] = digest(result["fingerprint"])[:16]
-    if performance_csv:
-        join_performance(result, performance_csv)
-    output = output.resolve()
-    if output.exists() and any(output.iterdir()):
-        raise FileExistsError(f"Use an empty output directory; refusing to overwrite {output}")
-    output.mkdir(parents=True, exist_ok=True)
-    import shutil
-    for name in ("samples.json", "barycenter.npz", "pca.npz", "cloud_projection.npz"):
-        path = source_path.parent / name
-        if path.is_file():
-            shutil.copy2(path, output / name)
-    alignment_dir = source_path.parent / "figs" / "alignment"
-    if alignment_dir.is_dir():
-        shutil.copytree(alignment_dir, output / "figs" / "alignment")
-    (output / "config_used.yaml").write_text(yaml.safe_dump({"source_components": str(source_path), "metric": result["config"]}, sort_keys=True))
-    write_report(result, output)
     return output

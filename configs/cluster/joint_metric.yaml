@@ -36,20 +36,14 @@ extraction:
 metric:
   tau_fg: 0.8
   tau_bg: 0.2
-  background_sampling: near_foreground # Compare with previous all-background report.
-  near_foreground_radius_patches: 2 # A 5x5 neighborhood on each image's patch grid.
-  n_samples_per_distribution: 512
-  min_samples_per_distribution: 16
+  near_foreground_radius_patches: 2 # Local 5x5 patch neighborhood, within each image.
   seed: 42
   l2_normalize: true
-  ot_epsilon: 0.05
-  sinkhorn_scaling: 0.99 # More accurate inner solve; compare with the original 0.9 run.
-  barycenter_support: 64
-  barycenter_max_iterations: 100
-  risk_formula: ratio
-  risk_epsilon: 1.0e-8
-  # Optional: pca_dim, barycenter_tolerance, device, dtype.
-  # Their defaults live in MetricConfig, rather than being repeated here.
+  probe_patches_per_image_per_class: 32
+  probe_train_fraction: 0.6
+  probe_validation_fraction: 0.2
+  probe_l2: 0.001
+  # Other defaults live in MetricConfig.
 
 # Applied only with --sensitivity. Add other metric.<field>: [values] axes here.
 sweep:

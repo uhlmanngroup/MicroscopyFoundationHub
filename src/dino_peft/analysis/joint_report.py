@@ -113,11 +113,9 @@ def _pyplot():
 
 
 def save_cloud_projection(result: dict, distributions: dict, output: Path) -> None:
-    """One display-only PCA for actual metric samples and the fitted support."""
-    from .joint_metric import MetricConfig, _transform_distributions
-    clouds, _ = _transform_distributions(distributions, MetricConfig(**result["config"]))
-    groups = [(name, kind, cloud) for name in sorted(clouds) for kind, cloud in clouds[name].items()]
-    # Balanced datasets/classes determine the axes; the barycenter does not.
+    """One shared display-only PCA on balanced local FG/BG probe samples."""
+    groups = [(name, kind, cloud) for name in sorted(distributions)
+              for kind, cloud in distributions[name].items()]
     cap = min(len(cloud) for _, _, cloud in groups)
     pooled = np.concatenate([cloud[:cap] for _, _, cloud in groups])
     mean = pooled.mean(axis=0)
@@ -129,32 +127,39 @@ def save_cloud_projection(result: dict, distributions: dict, output: Path) -> No
     variance = np.zeros(2)
     if np.square(singular).sum() > 0:
         variance[:min(2, len(singular))] = np.square(singular[:2]) / np.square(singular).sum()
+    names = result["dataset_order"]
+    starts = np.stack([result["per_dataset"][names.index(name)]["mean_local_background"] for name in names])
+    ends = np.stack([result["per_dataset"][names.index(name)]["mean_local_foreground"] for name in names])
     np.savez_compressed(output / "cloud_projection.npz",
                         coordinates=np.concatenate([(cloud - mean) @ axes.T for _, _, cloud in groups]),
                         dataset=np.concatenate([np.repeat(name, len(cloud)) for name, _, cloud in groups]),
                         kind=np.concatenate([np.repeat(kind, len(cloud)) for _, kind, cloud in groups]),
-                        barycenter=(np.asarray(result["barycenter"]["support"]) - mean) @ axes.T,
-                        mean=mean, axes=axes, explained_variance_ratio=variance)
+                        arrow_start=(starts - mean) @ axes.T, arrow_end=(ends - mean) @ axes.T,
+                        dataset_order=np.asarray(names), mean=mean, axes=axes,
+                        explained_variance_ratio=variance)
     result["projection"] = {"method": "shared_balanced_PCA_2D", "display_only": True,
-                            "fit": "equal samples per dataset and foreground/background class; excludes barycenter",
+                            "fit": "equal samples per dataset and foreground/local-background class",
                             "input_dimension": int(pooled.shape[1]), "explained_variance_ratio": variance.tolist(),
-                            "coordinate_order": "sorted datasets, foreground then background; matches samples.json within each group",
+                            "coordinate_order": "sorted datasets, foreground then background; display subset of probe samples",
                             "artifact": "cloud_projection.npz"}
 
 
 def alignment_triptych(path: Path, image, mask, occupancy, grid_shape, *, normalization="training",
-                      tau_fg=.8, tau_bg=.2, title="", selected=None) -> dict:
+                      tau_fg=.8, tau_bg=.2, radius=2, title="", selected=None) -> dict:
     """Display the actual processed input, mask overlay, and patch assignments."""
     from matplotlib.colors import ListedColormap
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+    from .joint_metric import near_foreground_background
     from dino_peft.utils.transforms import IMAGENET_MEAN, IMAGENET_STD, OPENCLIP_MEAN, OPENCLIP_STD
     mean, std = (OPENCLIP_MEAN, OPENCLIP_STD) if normalization == "openclip_native" else (IMAGENET_MEAN, IMAGENET_STD)
     rgb = np.clip(image.numpy().transpose(1, 2, 0) * np.asarray(std) + np.asarray(mean), 0, 1)
     foreground = np.asarray(mask)
     q = np.asarray(occupancy).reshape(grid_shape)
-    classes = np.where(q >= tau_fg, 2, np.where(q <= tau_bg, 0, 1))
-    colors = ["#3182bd", "#e6ad39", "#31a354"]
+    near = near_foreground_background(np.asarray(occupancy), grid_shape,
+                                      tau_fg=tau_fg, tau_bg=tau_bg, radius=radius).reshape(grid_shape)
+    classes = np.where(q >= tau_fg, 3, np.where(near, 1, np.where(q <= tau_bg, 0, 2)))
+    colors = ["#274e72", "#31a6b8", "#e6ad39", "#31a354"]
     height, width = foreground.shape
     extent = (0, width, height, 0)
     plt = _pyplot()
@@ -166,8 +171,9 @@ def alignment_triptych(path: Path, image, mask, occupancy, grid_shape, *, normal
     overlay[..., 1] = 1
     overlay[..., 3] = foreground * .55
     axes[1].imshow(overlay, extent=extent)
-    axes[2].imshow(classes, cmap=ListedColormap(colors), vmin=0, vmax=2, interpolation="nearest", alpha=.5, extent=extent)
-    handles = [Patch(color=color, label=label) for color, label in zip(colors, (f"BG: q ≤ {tau_bg:g}", "Mixed (excluded)", f"FG: q ≥ {tau_fg:g}"))]
+    axes[2].imshow(classes, cmap=ListedColormap(colors), vmin=0, vmax=3, interpolation="nearest", alpha=.5, extent=extent)
+    handles = [Patch(color=color, label=label) for color, label in zip(colors, (
+        "Other clear BG", f"Local BG: q ≤ {tau_bg:g}", "Mixed (excluded)", f"FG: q ≥ {tau_fg:g}"))]
     for kind, marker in (("foreground", "o"), ("background", "x")):
         tokens = (selected or {}).get(kind, [])
         if tokens:
@@ -196,218 +202,213 @@ def _image(output: Path, relative: str, alt: str) -> str:
 def make_figures(result: dict, output: Path) -> None:
     plt = _pyplot()
     output.mkdir(parents=True, exist_ok=True)
-    rows = result["per_dataset"]
-    names = [r["dataset"] for r in rows]
+    rows, names = result["per_dataset"], result["dataset_order"]
+    matrix = np.asarray(result["pairwise_alignment"])
+    fig, ax = plt.subplots(figsize=(max(7.5, len(names) * 1.5), max(4.5, len(names) * 1.1)), layout="constrained")
+    image = ax.imshow(matrix, cmap="coolwarm", vmin=-1, vmax=1)
+    ax.set_xticks(range(len(names)), names, rotation=30, ha="right")
+    ax.set_yticks(range(len(names)), names)
+    for i in range(len(names)):
+        for j in range(len(names)):
+            ax.text(j, i, f"{matrix[i, j]:.3f}", ha="center", va="center",
+                    color="white" if abs(matrix[i, j]) > .55 else "#172f43")
+    ax.set_title("Local foreground/background direction alignment", fontsize=11)
+    fig.colorbar(image, ax=ax, label="Cosine alignment (−1 to +1)")
+    for suffix in ("png", "svg"):
+        fig.savefig(output / f"alignment_matrix.{suffix}", dpi=170)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(1, 2, figsize=(max(9, len(names) * 2.7), 4), layout="constrained")
+    for ax, key, title, color in ((axes[0], "A_i", "Mean alignment with other datasets", "#317a9b"),
+                                  (axes[1], "M_i", "Local foreground/background magnitude", "#4e8a67")):
+        values = [row[key] for row in rows]
+        bars = ax.bar(names, values, color=color)
+        ax.bar_label(bars, labels=[f"{value:.3f}" for value in values], padding=3)
+        ax.set_title(title)
+        ax.tick_params(axis="x", rotation=25)
+        ax.spines[["top", "right"]].set_visible(False)
+        if key == "A_i":
+            ax.set_ylim(-1.05, 1.1)
+            ax.axhline(0, color="#82909a", linewidth=1)
+        else:
+            ax.margins(y=.2)
+    for suffix in ("png", "svg"):
+        fig.savefig(output / f"dataset_directions.{suffix}", dpi=170)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(max(7, len(names) * 2.2), 4), layout="constrained")
+    positions = np.arange(len(names))
+    individual = [row["test_individual_balanced_accuracy"] for row in rows]
+    joint = [row["test_joint_balanced_accuracy"] for row in rows]
+    ax.bar(positions - .2, individual, width=.4, label="Individual probe", color="#317a9b")
+    ax.bar(positions + .2, joint, width=.4, label="Shared probe", color="#d78644")
+    for index, row in enumerate(rows):
+        ax.text(index, max(individual[index], joint[index]) + .015,
+                f"Δ {row['test_joint_minus_individual']:+.3f}", ha="center", fontsize=9)
+    ax.set_xticks(positions, names)
+    ax.set(ylim=(0, 1.08), ylabel="Test balanced accuracy", title="Frozen-feature linear probe")
+    ax.legend()
+    ax.spines[["top", "right"]].set_visible(False)
+    for suffix in ("png", "svg"):
+        fig.savefig(output / f"linear_probe.{suffix}", dpi=170)
+    plt.close(fig)
+
     projection = output.parent / "cloud_projection.npz"
     if projection.is_file():
         with np.load(projection, allow_pickle=False) as data:
-            xy, dataset, kind, bary, variance = (data[k] for k in ("coordinates", "dataset", "kind", "barycenter", "explained_variance_ratio"))
-        points = np.concatenate([xy, bary])
-        margin = np.maximum(np.ptp(points, axis=0), 1e-3) * .08
+            xy, dataset, kind = (data[key] for key in ("coordinates", "dataset", "kind"))
+            starts, ends, variance = (data[key] for key in ("arrow_start", "arrow_end", "explained_variance_ratio"))
+        points = np.concatenate((xy, starts, ends))
+        span = np.ptp(points, axis=0)
+        margin = np.maximum(span, 1e-3) * .08
         limits = np.array([points.min(axis=0) - margin, points.max(axis=0) + margin]).T
-        palette = {name: plt.get_cmap("tab10")(i % 10) for i, name in enumerate(names)}
-        fig, ax = plt.subplots(figsize=(7, 5), layout="constrained")
-        for name in names:
-            points = xy[(dataset == name) & (kind == "foreground")]
-            ax.scatter(*points.T, s=12, alpha=.5, color=palette[name], label=name, rasterized=True)
-        ax.scatter(*bary.T, s=65, marker="*", c="black", label=f"Barycenter ({len(bary)} points)", zorder=3)
-        ax.set(title="Foreground clouds and fitted barycenter", xlabel=f"PC1 ({variance[0]:.1%} of variance)", ylabel=f"PC2 ({variance[1]:.1%} of variance)")
-        ax.set(xlim=limits[0], ylim=limits[1], aspect="equal")
-        ax.legend(fontsize=9)
-        for suffix in ("png", "svg"):
-            fig.savefig(output / f"foreground_clouds.{suffix}", dpi=160, bbox_inches="tight")
-        plt.close(fig)
-        fig, axes = plt.subplots(1, len(names), figsize=(5 * len(names), 4.5), sharex=True, sharey=True, squeeze=False, layout="constrained")
-        for name, ax in zip(names, axes[0]):
-            for label, marker in (("background", "x"), ("foreground", "o")):
-                points = xy[(dataset == name) & (kind == label)]
-                ax.scatter(*points.T, s=13, alpha=.4, marker=marker, color=palette[name], label=label, rasterized=True)
-            ax.scatter(*bary.T, s=45, marker="*", c="black", label="barycenter", zorder=3)
-            ax.set(title=name, xlabel=f"PC1 ({variance[0]:.1%})", xlim=limits[0], ylim=limits[1], aspect="equal")
+        if span[1] < .1 * span[0]:
+            midpoint = np.mean(limits[1])
+            limits[1] = midpoint + np.array([-.1, .1]) * span[0]
+        fig, axes = plt.subplots(1, len(names), figsize=(5 * len(names), 4.7), sharex=True, sharey=True,
+                                 squeeze=False, layout="constrained")
+        for index, (name, ax) in enumerate(zip(names, axes[0])):
+            for label, marker, color in (("background", "x", "#7f8c9a"),
+                                         ("foreground", "o", "#247ab0")):
+                cloud = xy[(dataset == name) & (kind == label)]
+                ax.scatter(*cloud.T, s=12, alpha=.35, marker=marker, color=color, label=label, rasterized=True)
+            ax.annotate("", xy=ends[index], xytext=starts[index],
+                        arrowprops={"arrowstyle": "-|>", "lw": 3, "color": "#d35400", "mutation_scale": 18})
+            ax.scatter(*starts[index], s=45, color="#d35400", zorder=4)
+            ax.set(title=name, xlabel=f"PC1 ({variance[0]:.1%})", xlim=limits[0], ylim=limits[1],
+                   aspect="auto" if span[1] < .1 * span[0] else "equal")
             ax.legend(fontsize=8)
         axes[0, 0].set_ylabel(f"PC2 ({variance[1]:.1%})")
-        fig.suptitle("Foreground vs background · identical PCA axes and limits")
+        fig.suptitle("Foreground and local background · arrows are projected full-space dataset directions")
         for suffix in ("png", "svg"):
-            fig.savefig(output / f"foreground_background.{suffix}", dpi=160, bbox_inches="tight")
-        plt.close(fig)
-    bary = result.get("barycenter", {})
-    if bary.get("objective_history") and bary.get("gradient_rms_history"):
-        fig, axes = plt.subplots(1, 2, figsize=(10, 3.5), layout="constrained")
-        axes[0].plot(bary["objective_history"], color="#146b82")
-        axes[0].set(title="Shared-reference fit", xlabel="Iteration", ylabel="Mean foreground distance")
-        axes[1].semilogy(np.maximum(bary["gradient_rms_history"], np.finfo(float).tiny), color="#146b82")
-        axes[1].axhline(bary["tolerance"], color="#b87800", linestyle="--", label="Required tolerance")
-        axes[1].set(title="Convergence check", xlabel="Iteration", ylabel="Gradient RMS (log scale)")
-        axes[1].legend()
-        for suffix in ("png", "svg"):
-            fig.savefig(output / f"convergence.{suffix}", dpi=160, bbox_inches="tight")
-        plt.close(fig)
-    fig, axes = plt.subplots(1, 3, figsize=(max(11, len(rows) * 2), 4.4), constrained_layout=True)
-    for ax, key, label, color in zip(axes, ["C_i", "S_i", "r_i"], ["Consensus deviation C (lower = closer)", "FG/BG separation S (larger = clearer)", "Candidate risk r"], ["#317a9b", "#4e8a67", "#b06b35"]):
-        values = [r[key] for r in rows]
-        bars = ax.bar(names, values, color=color)
-        ax.set_title(label, fontsize=10)
-        ax.bar_label(bars, labels=[number(v) for v in values], padding=3, fontsize=8)
-        ax.margins(y=.22)
-        ax.tick_params(axis="x", rotation=25)
-        ax.spines[["top", "right"]].set_visible(False)
-    fig.suptitle(f'{result["backbone"]} · {result["collection_id"]} · {result["run_id"]}', fontsize=11)
-    for suffix in ("png", "svg"):
-        fig.savefig(output / f"components.{suffix}", dpi=170)
-    plt.close(fig)
-    if result.get("pairwise_foreground") is not None:
-        values = np.asarray(result["pairwise_foreground"])
-        fig, ax = plt.subplots(figsize=(max(5, len(names) * 1.2), max(4, len(names))))
-        m = ax.imshow(values, cmap="Blues", vmin=0)
-        ax.set_xticks(range(len(names)), names, rotation=30, ha="right")
-        ax.set_yticks(range(len(names)), names)
-        for i in range(len(names)):
-            for j in range(len(names)):
-                ax.text(j, i, number(values[i, j]), ha="center", va="center", color="white" if values[i, j] > values.max() * .65 else "#172f43", fontsize=9)
-        ax.set_title("Pairwise foreground Sinkhorn divergence")
-        fig.colorbar(m, ax=ax)
-        fig.tight_layout()
-        for suffix in ("png", "svg"):
-            fig.savefig(output / f"pairwise.{suffix}", dpi=170)
-        plt.close(fig)
-    matched = [r for r in rows if "delta_i" in r]
-    if matched:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        for row in matched:
-            ax.scatter(row["r_i"], row["delta_i"], color="#146b82")
-            ax.annotate(row["dataset"], (row["r_i"], row["delta_i"]), xytext=(5, 5), textcoords="offset points")
-        ax.axhline(0, color="#82909a", linewidth=1)
-        ax.set(xlabel="Candidate risk r", ylabel="Observed ΔIoU (joint − individual)", title="Hypothesis check against observed training")
-        fig.tight_layout()
-        for suffix in ("png", "svg"):
-            fig.savefig(output / f"observed_effect.{suffix}", dpi=170)
+            fig.savefig(output / f"local_clouds.{suffix}", dpi=160, bbox_inches="tight")
         plt.close(fig)
 
 
 def collection_row(result: dict) -> dict:
-    row = {"backbone": result["backbone"], "collection_id": result["collection_id"], "run_id": result["run_id"], **result["collection"]}
+    row = {"backbone": result["backbone"], "collection_id": result["collection_id"],
+           "run_id": result["run_id"], "A_collection": result["collection"]["A_collection"]}
+    names = result["dataset_order"]
+    for dataset in result["per_dataset"]:
+        name = dataset["dataset"]
+        for key in ("A_i", "M_i", "test_individual_balanced_accuracy", "test_joint_balanced_accuracy",
+                    "test_joint_minus_individual"):
+            row[f"{key}__{name}"] = dataset[key]
+    matrix = result["pairwise_alignment"]
+    for i, left in enumerate(names):
+        for j in range(i + 1, len(names)):
+            row[f"A__{left}__{names[j]}"] = matrix[i][j]
     row.update(result.get("config", {}))
-    row.setdefault("background_sampling", "all")
     row["cache_hash"] = result.get("cache_hash", "")
-    row["barycenter_converged"] = result.get("barycenter", {}).get("converged", result.get("barycenter", {}).get("diagnostics", {}).get("converged"))
-    row["barycenter_gradient_rms"] = result.get("barycenter", {}).get("final_mass_scaled_gradient_rms")
     row["warning_count"] = len(result.get("warnings", []))
     return row
 
 
-def write_report(result: dict, output: Path, *, make_plots: bool = True) -> None:
+def write_report(result: dict, output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    if make_plots:
-        make_figures(result, output / "figs")
-    rows = result["per_dataset"]
+    make_figures(result, output / "figs")
+    rows, names = result["per_dataset"], result["dataset_order"]
     for row in rows:
-        row.setdefault("n_background_all", row.get("n_background"))
-        row.update({"backbone": result["backbone"], "collection_id": result["collection_id"], "run_id": result["run_id"]})
+        row.update({"backbone": result["backbone"], "collection_id": result["collection_id"],
+                    "run_id": result["run_id"]})
     write_json(output / "components.json", result)
-    write_csv(output / "per_dataset.csv", rows)
+    write_csv(output / "per_dataset.csv", rows,
+              [key for key in rows[0] if key not in ("mean_local_foreground", "mean_local_background")])
     write_csv(output / "collection.csv", [collection_row(result)])
-    cfg = result.get("config", {})
-    c = result["collection"]
-    warnings = result.get("warnings", [])
-    fields = [("dataset", "Dataset"), ("C_i", "C: consensus deviation"), ("S_i", "S: FG/BG separation"), ("r_i", "r: candidate risk"), ("C_pairwise", "Pairwise consensus"), ("r_pairwise", "Pairwise risk")]
-    if any("delta_i" in r for r in rows):
-        fields += [("iou_individual", "Individual IoU"), ("iou_joint", "Joint IoU"), ("delta_i", "ΔIoU")]
-    counts = [("dataset", "Dataset"), ("n_available", "All patches"), ("n_foreground", "Clear FG"), ("n_background_all", "All clear BG"), ("n_background", "Eligible BG"), ("n_ambiguous", "Discarded mixed"), ("n_sampled_foreground", "Sampled FG"), ("n_sampled_background", "Sampled BG")]
+    write_csv(output / "pairwise_alignment.csv",
+              [{"dataset": name, **dict(zip(names, result["pairwise_alignment"][i]))} for i, name in enumerate(names)])
+    write_csv(output / "probe_results.csv", result["linear_probe"]["per_dataset"])
+    cfg, warnings = result["config"], result.get("warnings", [])
     title = f'{result["collection_id"]} · {result["backbone"]}'
-    body = '<div class="tag">Joint-training compatibility · experimental diagnostic</div>'
-    body += f'<h1>{esc(title)}</h1><p class="muted">Run {esc(result["run_id"])} · {len(rows)} equally weighted datasets · seed {esc(cfg.get("seed"))}</p>'
+    fields = [("dataset", "Dataset"), ("A_i", "Mean alignment Aᵢ"),
+              ("M_i", "Local magnitude Mᵢ"),
+              ("test_individual_balanced_accuracy", "Individual probe"),
+              ("test_joint_balanced_accuracy", "Joint probe"),
+              ("test_joint_minus_individual", "Joint − individual")]
+    counts = [("dataset", "Dataset"), ("n_images_total", "Images"),
+              ("n_images_used", "Images with local pairs"), ("n_images_skipped", "Images skipped"),
+              ("n_local_vectors", "Local FG pairs"),
+              ("foreground_coverage", "Usable FG fraction"),
+              ("n_skipped_no_local_background", "FG skipped: no local BG"),
+              ("n_background_all", "All clear BG"), ("n_background_eligible", "Local BG"),
+              ("n_probe_foreground", "Probe FG"), ("n_probe_background", "Probe BG")]
+    body = '<div class="tag">Joint-training direction alignment · experimental diagnostic</div>'
+    body += f'<h1>{esc(title)}</h1><p class="muted">Run {esc(result["run_id"])} · {len(rows)} datasets · seed {esc(cfg["seed"])}</p>'
     body += '<nav>'
     if result.get("index_relative"):
         body += f'<a href="{esc(result["index_relative"])}">All experiments</a>'
-    if result.get("projection") and make_plots:
-        body += '<a href="#clouds">2D feature clouds</a>'
-    if result.get("alignment"):
-        body += '<a href="#alignment">Alignment examples</a>'
-    body += '<a href="#diagnostics">Convergence</a>'
-    body += '<a href="per_dataset.csv">Dataset CSV</a><a href="collection.csv">Collection CSV</a><a href="components.json">Raw components &amp; provenance</a><a href="config_used.yaml">Resolved config</a></nav>'
-    if (output / "samples.json").is_file():
-        body += '<p><a href="samples.json">Sample identities</a></p>'
-    body += '<div class="cards">' + ''.join(f'<div class="card">{esc(label)}<b>{number(c[key])}</b><small>{esc(desc)}</small></div>' for key, label, desc in [("G", "Global risk G", "Mean candidate risk"), ("L", "Selective risk L", "Population standard deviation"), ("L_rel", "Relative dispersion", "L / (G + ε)")]) + '</div>'
-    body += f'<p>Risk formula: <code>{esc(cfg.get("risk_formula", "ratio"))}</code>; consensus for risk: <code>{esc(cfg.get("risk_consensus", "barycenter"))}</code>. C below always records the barycenter deviation.</p>'
-    body += f'<p>Sinkhorn scaling: <b>{esc(cfg.get("sinkhorn_scaling"))}</b> · OT regularization ε: {esc(cfg.get("ot_epsilon"))} · seed: {esc(cfg.get("seed"))}. Scaling controls numerical accuracy; compare convergence and scores with the original 0.9 run using the same seed.</p>'
-    if cfg.get("background_sampling") == "near_foreground":
-        radius = cfg["near_foreground_radius_patches"]
-        body += f'<p><b>Background sampling: near foreground.</b> A clear background patch is eligible when a clear foreground patch occurs within {radius} patch-grid steps on the same image (including diagonals). Foreground eligibility and full-image embeddings are unchanged; check the sample counts when comparing with an all-background run at the same seed and Sinkhorn settings.</p>'
-    else:
-        body += '<p><b>Background sampling: all clear background patches.</b> This includes black exterior canvas when it is labeled background.</p>'
-    body += '<p>These are continuous research diagnostics. Compare runs with matching settings; no universal safe/unsafe thresholds have been calibrated. A large L means uneven risk, while G measures its average level. Inspect C and S before interpreting the ratio.</p>'
+    body += '<a href="#directions">Direction alignment</a><a href="#probe">Linear probe</a><a href="#clouds">2D view</a><a href="#alignment">Image checks</a>'
+    body += '<a href="per_dataset.csv">Dataset CSV</a><a href="pairwise_alignment.csv">Alignment CSV</a><a href="collection.csv">Collection CSV</a><a href="components.json">Raw data</a></nav>'
+    body += f'<div class="cards"><div class="card">Collection alignment<b>{number(result["collection"]["A_collection"])}</b><small>Mean cosine across all dataset pairs; −1 to +1</small></div></div>'
+    body += '<p>Each foreground patch points from the mean of its nearby clear-background patches toward its foreground embedding. Image directions are averaged equally within each dataset. Dataset directions are compared by cosine in the original feature space. Higher alignment means more similar directions; no risk thresholds are assumed.</p>'
+    body += f'<p>Local background uses a {2*cfg["near_foreground_radius_patches"]+1}×{2*cfg["near_foreground_radius_patches"]+1} patch neighborhood within the same image. Clear foreground occupancy ≥ {cfg["tau_fg"]}; clear background occupancy ≤ {cfg["tau_bg"]}. Foreground patches without local clear background are skipped and counted. No intensity or black-pixel filter is applied.</p>'
     if warnings:
         body += '<div class="warn"><b>Checks requiring attention</b><ul>' + ''.join(f'<li>{esc(w)}</li>' for w in warnings) + '</ul></div>'
-    body += '<h2>Per-dataset components</h2><p>Click a column heading to sort. C measures disagreement with the shared foreground distribution; S measures separation from each dataset’s own background.</p><div class="panel">' + table(rows, fields, "components") + '</div>'
-    if make_plots:
-        body += '<figure class="panel">' + _image(output, "figs/components.png", "Separate consensus, saliency and candidate risk plots") + '<figcaption><a href="figs/components.svg">Download vector figure</a></figcaption></figure>'
-        if result.get("pairwise_foreground") is not None:
-            body += '<figure class="panel">' + _image(output, "figs/pairwise.png", "Pairwise foreground distance matrix") + '<figcaption><a href="figs/pairwise.svg">Download vector matrix</a></figcaption></figure>'
-        if any("delta_i" in r for r in rows):
-            body += '<figure class="panel">' + _image(output, "figs/observed_effect.png", "Candidate risk versus observed joint-training effect") + '</figure>'
-        if result.get("projection") and (output / "cloud_projection.npz").is_file():
-            projection = result["projection"]
-            retained = sum(projection["explained_variance_ratio"])
-            body += f'<h2 id="clouds">Feature clouds and shared foreground reference</h2><p>Each dot is an embedding actually sampled for this run. Black stars are the fitted barycenter support points. One shared PCA projects foreground, background and the fitted barycenter onto the same axes, retaining <b>{retained:.1%}</b> of sampled feature variance.</p>'
-            body += f'<p>This is a display in 2D: distances, barycenter fitting and risk scores were calculated in {projection["input_dimension"]} dimensions. Overlap in this projection does not prove overlap in the full feature space. The barycenter is projected after fitting; it is not refitted in 2D.</p>'
-            for stem in ("foreground_clouds", "foreground_background"):
-                body += '<figure class="panel">' + _image(output, f"figs/{stem}.png", stem.replace("_", " ")) + f'<figcaption><a href="figs/{stem}.svg">Download vector figure</a></figcaption></figure>'
-            body += '<p><a href="cloud_projection.npz">Projection coordinates and shared PCA axes</a> · Point order is recorded in the raw components and corresponds to sample identities.</p>'
-    body += '<h2>Sampling and filtering</h2><div class="panel">' + table(rows, counts, "counts") + '</div>'
+    body += '<h2 id="directions">Direction alignment</h2><p>The diagonal is 1 by definition. Off-diagonal values compare peer datasets symmetrically. Aᵢ is each dataset’s mean alignment to the others; Mᵢ is a separate magnitude diagnostic.</p>'
+    body += '<figure class="panel">' + _image(output, "figs/alignment_matrix.png", "Pairwise direction cosine heatmap") + '<figcaption><a href="figs/alignment_matrix.svg">Download vector figure</a></figcaption></figure>'
+    body += '<div class="panel">' + table(rows, fields, "datasets") + '</div>'
+    body += '<figure class="panel">' + _image(output, "figs/dataset_directions.png", "Per-dataset direction alignment and local magnitude") + '</figure>'
+    body += '<h2 id="probe">Frozen-feature linear probe</h2><p>Individual and shared binary logistic probes use only cached embeddings. The pretrained backbone is frozen. Images are split within each dataset into disjoint training, validation and test sets; the saved split lists their IDs. Training gives equal total weight to every dataset, class and image. The table above and plot below show held-out test balanced accuracy; Δ is joint minus individual. This is a diagnostic, not part of the zero-training alignment metric.</p>'
+    body += '<figure class="panel">' + _image(output, "figs/linear_probe.png", "Individual versus joint linear-probe test balanced accuracy") + '<figcaption><a href="figs/linear_probe.svg">Download vector figure</a> · <a href="probe_results.csv">Validation and test CSV</a> · <a href="probe_split.json">Image splits</a> · <a href="probe_weights.npz">Probe weights</a></figcaption></figure>'
+    if result.get("projection"):
+        retained = sum(result["projection"]["explained_variance_ratio"])
+        body += f'<h2 id="clouds">Two-dimensional feature view</h2><p>Dots are sampled foreground and local-background patch embeddings. Orange arrows project each full-space dataset direction from its mean local-background centroid toward foreground. Shared PCA retains {retained:.1%} of displayed feature variance; alignment is computed in {result["projection"]["input_dimension"]} dimensions, not from this picture.</p>'
+        body += '<figure class="panel">' + _image(output, "figs/local_clouds.png", "Local foreground and background clouds with direction arrows") + '<figcaption><a href="figs/local_clouds.svg">Download vector figure</a> · <a href="cloud_projection.npz">Projection coordinates</a></figcaption></figure>'
+    body += '<h2>Sampling and coverage</h2><div class="panel">' + table(rows, counts, "counts") + '</div>'
+    body += '<p><a href="local_vectors.npz">All local d(f) vectors and patch identities</a> · <a href="samples.json">Probe patch identities</a> · <a href="config_used.yaml">Resolved configuration</a></p>'
     alignment = result.get("alignment", {})
     if alignment:
-        body += '<h2 id="alignment">Image / mask / patch alignment</h2><p>When source images are available, up to three reproducible random images per dataset are reconstructed with the cache’s original preprocessing and checked against its mask occupancies. They show the processed input, foreground mask and patch classes; circles and crosses mark sampled locations. If sources have moved, the report instead shows the triptychs saved during extraction. Those are the first cached images, have no sampled markers, and cannot be independently rechecked against the current source files.</p>'
-        body += '<p>Check that the mask follows the target structures and that patch classes follow mask coverage. “Near-black” means all processed RGB channels ≤ 2/255; this is a visual diagnostic, not a tissue detector or an exclusion rule. Percentages describe source-file examples only.</p>'
+        body += '<h2 id="alignment">Image / mask / patch alignment</h2><p>Source images are reconstructed with the extraction-time preprocessing and checked against cached occupancies when available. Circles and crosses mark probe-sampled foreground and local-background patches. Dark blue marks other clear background; teal marks eligible local background. Near-black percentages are descriptive, not an exclusion rule.</p>'
         for preview in alignment.get("previews", []):
             if preview.get("source") == "cache_preview":
-                caption = f'{preview["dataset"]} · {preview["sample_id"]} · saved during cache extraction; source files not reverified · sampled locations not shown'
+                caption = f'{preview["dataset"]} · {preview["sample_id"]} · extraction-time preview; source not reverified'
             else:
-                caption = f'{preview["dataset"]} · {preview["sample_id"]} · cached occupancy verified · crop: {preview["crop_box_xyxy"]} · near-black pixels: {preview["near_black_pixel_fraction"]:.1%}'
-            body += '<figure class="panel">' + _image(output, preview["figure"], caption) + f'<figcaption>{esc(caption)} · <a href="{esc(preview["figure"])}">Download triptych</a></figcaption></figure>'
-    bary = result.get("barycenter", {})
-    body += '<h2 id="diagnostics">Method and numerical diagnostics</h2><div class="panel">'
-    body += f'<p>Barycenter: <b>{"converged" if bary.get("converged") else "check convergence"}</b> · support atoms: {esc(bary.get("support_size"))} · iterations: {esc(bary.get("iterations"))} · final gradient RMS: {esc(number(bary.get("final_mass_scaled_gradient_rms")))}</p>'
-    if make_plots and (output / "figs/convergence.png").is_file():
-        body += _image(output, "figs/convergence.png", "Barycenter objective and convergence threshold")
-    if (output / "barycenter.npz").is_file():
-        body += '<p><a href="barycenter.npz">Download fitted barycenter support</a></p>'
-    if (output / "pca.npz").is_file():
-        body += '<p><a href="pca.npz">Download shared PCA transform</a></p>'
-    body += f'<details><summary>Full settings, convergence history and preprocessing diagnostics</summary><pre>{esc(json.dumps({"metric": cfg, "distance": result.get("distance"), "barycenter": bary, "transform": {k:v for k,v in result.get("transform", {}).items() if k not in ("pca_components", "pca_mean")}}, indent=2))}</pre></details></div>'
-
+                caption = f'{preview["dataset"]} · {preview["sample_id"]} · occupancy verified · near-black pixels {preview["near_black_pixel_fraction"]:.1%}'
+            body += '<figure class="panel">' + _image(output, preview["figure"], caption) + f'<figcaption>{esc(caption)}</figcaption></figure>'
+    body += '<details class="panel"><summary>Full method settings and probe-weight comparison</summary><pre>' + esc(json.dumps({"config": cfg, "individual_probe_weight_cosine": result["linear_probe"]["individual_weight_cosine"]}, indent=2)) + '</pre></details>'
     (output / "index.html").write_text(document(title, body))
-    md = [f"# {title}", "", f"Run `{result['run_id']}` · {len(rows)} datasets", "", f"G = {number(c['G'])} · L = {number(c['L'])} · L_rel = {number(c['L_rel'])}", "", "Continuous experimental diagnostics; no calibrated decision thresholds.", "", "| Dataset | C | S | r | Pairwise C |", "|---|---:|---:|---:|---:|"]
-    md += [f"| {r['dataset']} | {number(r['C_i'])} | {number(r['S_i'])} | {number(r['r_i'])} | {number(r.get('C_pairwise'))} |" for r in rows]
-    md += ["", "Warnings:"] + [f"- {w}" for w in warnings] if warnings else []
-    md += ["", "Open `index.html` for plots, counts, links and numerical diagnostics.", ""]
+    md = [f"# {title}", "", f"Run `{result['run_id']}` · {len(rows)} datasets", "",
+          f"Collection alignment: {number(result['collection']['A_collection'])}", "",
+          "| Dataset | Mean alignment | Local magnitude | Individual probe | Joint probe | Difference |",
+          "|---|---:|---:|---:|---:|---:|"]
+    md += [f"| {row['dataset']} | {number(row['A_i'])} | {number(row['M_i'])} | {number(row['test_individual_balanced_accuracy'])} | {number(row['test_joint_balanced_accuracy'])} | {number(row['test_joint_minus_individual'])} |" for row in rows]
+    md += ["", "Open `index.html` for the matrix, plots, image checks and provenance.", ""]
     (output / "README.md").write_text("\n".join(md))
 
 
 def summarize_results(root: Path) -> list[dict]:
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
-    rows, datasets, invalid = [], [], []
+    rows, datasets, legacy, invalid = [], [], [], []
     for path in sorted(root.rglob("components.json")):
-        if any(p.startswith(".") for p in path.relative_to(root).parts):
+        if any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
         try:
             result = json.loads(path.read_text())
+            if result.get("schema_version") != 2:
+                legacy.append(path)
+                continue
             row = collection_row(result)
             row["report"] = quote(str(path.parent.relative_to(root) / "index.html"), safe="/")
             rows.append(row)
-            datasets.extend(result["per_dataset"])
+            datasets.extend({key: value for key, value in dataset.items()
+                             if key not in ("mean_local_foreground", "mean_local_background")}
+                            for dataset in result["per_dataset"])
         except (KeyError, ValueError, TypeError) as exc:
             invalid.append(f"{path.relative_to(root)}: {exc}")
     write_csv(root / "all_collections.csv", rows)
     write_csv(root / "all_datasets.csv", datasets)
-    fields = [("collection_id", "Collection"), ("backbone", "Backbone"), ("run_id", "Run"), ("G", "Global G"), ("L", "Selective L"), ("pairwise_G", "Pairwise G"), ("background_sampling", "Background sample"), ("near_foreground_radius_patches", "Near radius (patches)"), ("seed", "Seed"), ("sinkhorn_scaling", "Sinkhorn scaling"), ("barycenter_converged", "Converged"), ("barycenter_gradient_rms", "Gradient RMS"), ("tau_fg", "τ FG"), ("tau_bg", "τ BG"), ("ot_epsilon", "OT ε"), ("risk_formula", "Risk formula"), ("warning_count", "Warnings")]
-    body = '<div class="tag">Experiment navigator</div><h1>Joint-training compatibility</h1>'
-    body += f'<p>{len(rows)} completed metric runs. Filter by collection, backbone, seed or run ID, then open the run for components, plots and numerical checks.</p><nav><a href="all_collections.csv">All collection results (CSV)</a><a href="all_datasets.csv">All dataset components (CSV)</a></nav>'
-    body += '<p>Compare matching threshold, normalization, OT and sampling settings. G is average risk; L is its unevenness across datasets. These values do not yet establish safe/unsafe categories.</p><div class="panel">' + table(rows, fields, "runs", {"run_id": lambda row: row["report"]}) + '</div>'
+    fields = [("collection_id", "Collection"), ("backbone", "Backbone"), ("run_id", "Run"),
+              ("A_collection", "Mean pair alignment"), ("seed", "Seed"),
+              ("near_foreground_radius_patches", "Local radius"), ("warning_count", "Warnings")]
+    body = '<div class="tag">Experiment navigator</div><h1>Local direction alignment</h1>'
+    body += f'<p>{len(rows)} current-format runs. Open a run for its pairwise direction matrix, per-dataset alignment, local magnitude and held-out probe comparison.</p>'
+    body += '<nav><a href="all_collections.csv">Collection results CSV</a><a href="all_datasets.csv">Dataset results CSV</a></nav>'
+    body += '<div class="panel">' + table(rows, fields, "runs", {"run_id": lambda row: row["report"]}) + '</div>' if rows else '<p>No current-format runs found yet.</p>'
+    if legacy:
+        body += f'<p class="muted">{len(legacy)} historical reports use the retired formulation and are excluded from these comparisons.</p>'
     if invalid:
         body += '<div class="warn">Unreadable result files:<ul>' + ''.join(f'<li>{esc(v)}</li>' for v in invalid) + '</ul></div>'
-    if not rows:
-        body += '<p>No completed runs found. Check the submission manifest and SLURM logs.</p>'
-    (root / "index.html").write_text(document("Joint-training compatibility experiments", body))
-    (root / "README.md").write_text(f"# Joint-training compatibility\n\n{len(rows)} completed runs. Open `index.html` to navigate.\n\n- `all_datasets.csv`: C, S and risk per dataset.\n- `all_collections.csv`: G, L and full comparison settings.\n- `logs/`: cluster jobs and submission manifests, when run via SLURM.\n")
+    (root / "index.html").write_text(document("Local direction alignment experiments", body))
+    (root / "README.md").write_text(f"# Local direction alignment\n\n{len(rows)} current-format runs. Open `index.html` to navigate. Historical reports are excluded.\n")
     return rows

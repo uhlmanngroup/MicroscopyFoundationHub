@@ -1,8 +1,5 @@
-"""Small CPU-only checks for the scientific invariants and one complete pipeline."""
-from dataclasses import replace
+"""Small CPU checks for local geometry, probe leakage and cache reuse."""
 import json
-import os
-from pathlib import Path
 import subprocess
 import sys
 
@@ -11,141 +8,72 @@ from PIL import Image
 import pytest
 import torch
 
-from dino_peft.config import load_config
-from dino_peft.analysis.joint_cache import _AlignedDataset, _resolve_sources, extract_joint_cache, load_cache_manifest, occupancy_on_grid
-from dino_peft.analysis.joint_metric import MetricConfig, SinkhornDistance, compute_metric, fit_barycenter, near_foreground_background, risk_from_components, sample_indices, _transform_distributions
-from dino_peft.analysis.joint_run import recompute, refresh_alignment_report, resolve_experiment, run_one, save_alignment_previews
-from dino_peft.analysis.joint_report import save_cloud_projection
+from dino_peft.analysis.joint_cache import extract_joint_cache, load_cache_manifest
+from dino_peft.analysis.joint_metric import (MetricConfig, direction_alignment, image_split,
+    local_directions, near_foreground_background, run_linear_probes)
+from dino_peft.analysis.joint_run import run_one
+from dino_peft.analysis.joint_report import summarize_results
 from dino_peft.backbones.base import BackboneOutput
+from dino_peft.config import load_config
 
 
-@pytest.fixture
-def cfg():
-    before = torch.get_num_threads()
-    torch.set_num_threads(1)
-    yield MetricConfig(l2_normalize=False, min_samples_per_distribution=1,
-                       n_samples_per_distribution=16, barycenter_support=2,
-                       barycenter_max_iterations=40, barycenter_tolerance=1e-7)
-    torch.set_num_threads(before)
+def test_local_background_never_crosses_images_and_skips_interiors():
+    config = MetricConfig(near_foreground_radius_patches=1, l2_normalize=False)
+    q = np.array([1, 1, 1, 0,
+                  1, 1, 1, 0,
+                  1, 1, 1, 0,
+                  0, 0, 0, 0.], dtype=float)
+    z = np.zeros((16, 2), dtype=np.float32)
+    z[q == 1] = [2, 1]
+    z[q == 0] = [1, 1]
+    result = local_directions(z, q, (4, 4), config)
+    assert result["n_foreground_all"] == 9
+    assert result["n_skipped_no_local_background"] == 4
+    np.testing.assert_array_equal(result["vectors"], np.tile([1, 0], (5, 1)))
+    near = near_foreground_background(q, (4, 4), tau_fg=.8, tau_bg=.2, radius=1)
+    assert np.all(near[result["background_indices"]])
+    assert not near_foreground_background(np.zeros(16), (4, 4), tau_fg=.8, tau_bg=.2, radius=1).any()
 
 
-def clouds(points, separation=1.):
-    result = {}
-    for i, point in enumerate(points):
-        foreground = np.tile(point, (4, 1)).astype(float)
-        offset = np.zeros(foreground.shape[1])
-        offset[-1] = separation
-        result[str(i)] = {'foreground': foreground, 'background': foreground + offset}
-    return result
+def test_direction_alignment_is_symmetric_and_image_balanced():
+    def image(direction, n):
+        return {"mean_vector": np.array(direction), "mean_magnitude": float(np.linalg.norm(direction)),
+                "mean_foreground": np.array(direction), "mean_background": np.zeros(2),
+                "n_vectors": n, "n_skipped_no_local_background": 0}
+    data = {"a": [image([1, 0], 1), image([1, 0], 100)],
+            "b": [image([1, 0], 2)], "c": [image([-1, 0], 5)]}
+    result = direction_alignment(data, MetricConfig())
+    np.testing.assert_allclose(result["pairwise_alignment"], [[1, 1, -1], [1, 1, -1], [-1, -1, 1]])
+    assert result["collection"]["A_collection"] == pytest.approx(-1 / 3)
+    assert [r["A_i"] for r in result["per_dataset"]] == [0, 0, -1]
+    assert result == direction_alignment(dict(reversed(list(data.items()))), MetricConfig())
 
 
-def test_balanced_sampling_reproducibility_and_order(cfg):
-    q = {'a': np.r_[np.ones(40), np.zeros(30), [.5]], 'b': np.r_[np.ones(9), np.zeros(8)]}
-    a, b = sample_indices(q, cfg), sample_indices(dict(reversed(list(q.items()))), cfg)
-    assert a['balanced_sample_count'] == 8
-    assert a['counts']['a']['n_ambiguous'] == 1
-    for dataset in q:
-        for kind in ('foreground', 'background'):
-            np.testing.assert_array_equal(a['indices'][dataset][kind], b['indices'][dataset][kind])
-            assert len(np.unique(a['indices'][dataset][kind])) == 8
-    with pytest.raises(ValueError, match='background'):
-        sample_indices({'a': np.ones(8), 'b': np.ones(8)}, cfg)
+def test_image_disjoint_probe_detects_opposing_label_directions():
+    config = MetricConfig(l2_normalize=False, probe_max_iterations=35, probe_l2=.01)
+    samples = {}
+    for name, sign in (("a", 1), ("b", -1)):
+        samples[name] = {}
+        for index in range(6):
+            samples[name][f"image-{index}"] = {
+                "foreground": np.tile([float(sign), 0.], (4, 1)),
+                "background": np.tile([0., 0.], (4, 1))}
+    report, weights = run_linear_probes(samples, config)
+    for name, groups in report["split"].items():
+        assert set(groups["train"]).isdisjoint(groups["validation"])
+        assert set(groups["train"]).isdisjoint(groups["test"])
+        assert set(groups["validation"]).isdisjoint(groups["test"])
+        assert len(set().union(*map(set, groups.values()))) == len(samples[name])
+    for row in report["per_dataset"]:
+        assert row["test_individual_balanced_accuracy"] == 1
+        assert row["test_joint_balanced_accuracy"] == .5
+        assert row["test_joint_minus_individual"] == -.5
+    assert weights["individual_weights"].shape == (2, 2)
+    assert image_split(list(samples["a"]), seed=config.seed, dataset="a",
+                       train_fraction=.6, validation_fraction=.2) == report["split"]["a"]
 
 
-def test_near_foreground_background_uses_each_image_grid(cfg):
-    q = np.array([1., 0., 0., 0.,
-                  0., 0., 0., 0.,
-                  0., 0., 0., 0.])
-    near = near_foreground_background(q, (3, 4), tau_fg=.8, tau_bg=.2, radius=1)
-    np.testing.assert_array_equal(np.flatnonzero(near), [1, 4, 5])
-    far = near_foreground_background(np.zeros(12), (3, 4), tau_fg=.8, tau_bg=.2, radius=1)
-    assert not far.any()  # A foreground patch in the previous image cannot leak in.
-    data = {'a': np.r_[q, np.zeros(12)], 'b': q.copy()}
-    masks = {'a': np.r_[near, far], 'b': near}
-    selected = sample_indices(data, replace(cfg, background_sampling='near_foreground'), near_background=masks)
-    assert selected['counts']['a']['n_background_all'] == 23
-    assert selected['counts']['a']['n_background'] == 3
-    assert selected['counts']['a']['n_sampled_background'] == 1
-    assert np.all(masks['a'][selected['indices']['a']['background']])
-
-
-def test_sinkhorn_cost_and_normalized_mass(cfg):
-    distance = SinkhornDistance(cfg).distance
-    assert distance(np.array([[0., 0.]]), np.array([[3., 4.]])) == pytest.approx(25.)
-    x = np.array([[-1., 0.], [1., 0.], [.2, .5]])
-    y = x + [.5, .3]
-    assert distance(x, x) == pytest.approx(0., abs=1e-10)
-    assert distance(x, y) == pytest.approx(distance(y, x), abs=1e-10)
-    assert distance(np.tile(x, (7, 1)), y) == pytest.approx(distance(x, y), abs=1e-9)
-
-
-def test_barycenter_equal_dataset_weights_and_multiple_modes(cfg):
-    unequal = fit_barycenter({'a': np.zeros((2, 1)), 'b': np.full((50, 1), 6.)}, cfg)
-    np.testing.assert_allclose(unequal['support'], 3., atol=1e-6)
-    assert unequal['diagnostics']['dataset_weights'] == [.5, .5]
-    bimodal = np.array([[-1.], [1.]])
-    result = fit_barycenter({'a': bimodal, 'b': bimodal}, cfg)
-    np.testing.assert_allclose(np.sort(result['support'], axis=0), bimodal, atol=1e-6)
-
-
-def test_stable_selective_global_patterns_and_permutation(cfg):
-    stable = compute_metric(clouds([[2., 2.]] * 3), cfg)
-    assert stable['collection']['G'] < 1e-8 and stable['collection']['L'] < 1e-8
-    data = clouds([[0., 0.], [0., 0.], [3., 0.]])
-    selective = compute_metric(data, cfg)
-    assert selective == compute_metric(dict(reversed(list(data.items()))), cfg)
-    assert selective['per_dataset'][2]['r_i'] > 3.9 * selective['per_dataset'][0]['r_i']
-    global_risk = compute_metric(clouds([[1., 0.], [-.5, np.sqrt(3)/2], [-.5, -np.sqrt(3)/2]], .2), cfg)
-    assert global_risk['collection']['G'] > 20 and global_risk['collection']['L'] < 1e-4
-
-
-def test_risk_population_std_and_separability():
-    assert risk_from_components([1, 3], [0, 0], epsilon=1) == {'r': [1., 3.], 'G': 2., 'L': 1., 'L_rel': 1/3}
-    assert risk_from_components([1, 1], [.1, 1])['r'][0] > 9 * risk_from_components([1, 1], [.1, 1])['r'][1]
-    assert risk_from_components([1, 3], [10, 100], formula='consensus')['r'] == [1, 3]
-
-
-def test_shared_balanced_pca(cfg, tmp_path):
-    data = clouds([[1., 0., 0.], [0., 2., 0.]])
-    data['0'] = {k: np.tile(v, (5, 1)) for k, v in data['0'].items()}
-    transformed, meta = _transform_distributions(data, replace(cfg, pca_dim=2))
-    np.testing.assert_allclose(meta['pca_mean'], [.5, 1., .5])
-    for name, classes in data.items():
-        for kind, array in classes.items():
-            expected = (array - meta['pca_mean']) @ np.array(meta['pca_components']).T
-            np.testing.assert_allclose(transformed[name][kind], expected)
-    # Display projection must apply the SAME metric transform to samples and
-    # the already-fitted barycenter (never normalize or refit the support).
-    config = replace(cfg, pca_dim=2, l2_normalize=True)
-    transformed, _ = _transform_distributions(data, config)
-    support = np.array([[.2, .3], [-.2, -.1]])
-    result = {"config": vars(config), "barycenter": {"support": support.tolist()}}
-    save_cloud_projection(result, data, tmp_path)
-    with np.load(tmp_path / 'cloud_projection.npz') as projected:
-        for name in data:
-            for kind in ('foreground', 'background'):
-                selected = (projected['dataset'] == name) & (projected['kind'] == kind)
-                expected = (transformed[name][kind] - projected['mean']) @ projected['axes'].T
-                np.testing.assert_allclose(projected['coordinates'][selected], expected)
-        np.testing.assert_allclose(projected['barycenter'], (support - projected['mean']) @ projected['axes'].T)
-        assert projected['explained_variance_ratio'].sum() == pytest.approx(1.)
-
-
-def test_fractional_mask_alignment(tmp_path):
-    images, masks = tmp_path / 'images', tmp_path / 'masks'
-    images.mkdir(); masks.mkdir()
-    mask = np.zeros((8, 8), np.uint8); mask[:, 2] = 255
-    for directory in (images, masks):
-        Image.fromarray(mask).save(directory / '0.png')
-    source = _resolve_sources({'datasets': [{'id': 'a', 'image_dir': str(images), 'mask_dir': str(masks)}],
-                               'preprocessing': {'center_crop_size': 4, 'img_size': [2, 2]}})[0]
-    image, occupancy, _ = _AlignedDataset(source)[0]
-    assert image.shape == (3, 2, 2)
-    np.testing.assert_allclose(occupancy, [[.5, 0], [.5, 0]])
-    np.testing.assert_allclose(occupancy_on_grid(occupancy, (1, 1), patch_size=2), [.25])
-
-
-def test_cache_to_report_and_risk_only_reuse(tmp_path, cfg, monkeypatch):
+def test_cache_to_direction_report_without_rerunning_backbone(tmp_path):
     class Backbone(torch.nn.Module):
         patch_size = 2
         def forward(self, x):
@@ -153,84 +81,64 @@ def test_cache_to_report_and_risk_only_reuse(tmp_path, cfg, monkeypatch):
             z = torch.nn.functional.avg_pool2d(x, 2).flatten(2).transpose(1, 2)
             return BackboneOutput(z.mean(1), z, (4, 4))
     datasets = []
-    for name in ['a', 'b']:
-        path = tmp_path / name; path.mkdir()
-        mask = np.zeros((8, 8), np.uint8); mask[:, :4] = 255
+    for name in ("a", "b"):
+        path = tmp_path / name
+        path.mkdir()
+        mask = np.zeros((8, 8), np.uint8)
+        mask[:, :4] = 255
         for index in range(5):
-            Image.fromarray(mask).save(path / f'{index}.png')
-        datasets.append({'id': name, 'image_dir': str(path), 'mask_dir': str(path)})
-    experiment = {'cache_dir': str(tmp_path / 'cache'), 'results_root': str(tmp_path / 'results'),
-                  'collection_id': 'synthetic', 'backbone_id': 'test', 'backbone': {'name': 'dinov3'},
-                  'datasets': datasets, 'preprocessing': {'img_size': {'mode': 'native'}},
-                  'extraction': {'device': 'cpu', 'preview_samples': 1}, 'metric': vars(cfg)}
-    extract_joint_cache(experiment, backbone_factory=lambda *a, **kw: Backbone())
-    def forbidden(*a, **kw):
-        raise AssertionError('Reuse must not call backbone inference or OT')
+            Image.fromarray(mask).save(path / f"{index}.png")
+        datasets.append({"id": name, "image_dir": str(path), "mask_dir": str(path)})
+    config = MetricConfig(l2_normalize=False, near_foreground_radius_patches=1,
+                          probe_patches_per_image_per_class=4, probe_max_iterations=25)
+    experiment = {"cache_dir": str(tmp_path / "cache"), "results_root": str(tmp_path / "results"),
+                  "collection_id": "synthetic", "backbone_id": "test", "backbone": {"name": "dinov3"},
+                  "datasets": datasets, "preprocessing": {"img_size": {"mode": "native"}},
+                  "extraction": {"device": "cpu", "preview_samples": 1}, "metric": vars(config)}
+    extract_joint_cache(experiment, backbone_factory=lambda *args, **kwargs: Backbone())
+    def forbidden(*args, **kwargs):
+        raise AssertionError("The cached run must not execute the backbone")
     extract_joint_cache(experiment, backbone_factory=forbidden)
     output = run_one(experiment)
-    assert all((output / p).is_file() for p in ['samples.json', 'components.json', 'index.html', 'per_dataset.csv', 'figs/components.svg', 'cloud_projection.npz', 'figs/foreground_clouds.png', 'figs/foreground_background.svg', 'figs/convergence.png'])
-    result = json.loads((output / 'components.json').read_text())
-    assert result['collection']['G'] < 1e-8
-    assert len(result['alignment']['previews']) == 6 and not result['alignment']['warnings']
-    assert all(p['cache_occupancy_verified'] and p['near_black_pixel_fraction'] == .5 for p in result['alignment']['previews'])
-    report = (output / 'index.html').read_text()
-    assert 'src="data:image/png;base64,' in report and 'src="figs/' not in report
-    # The near-object run reuses frozen features. Missing source images still
-    # yield honest cached extraction triptychs instead of an empty section.
-    for name in ('a', 'b'):
-        (tmp_path / name).rename(tmp_path / f'{name}-moved')
-    manifest = load_cache_manifest(tmp_path / 'cache')
-    identities = json.loads((output / 'samples.json').read_text())['datasets']
-    relocated = {name: {'image_dir': str(tmp_path / f'{name}-moved'),
-                        'mask_dir': str(tmp_path / f'{name}-moved')} for name in ('a', 'b')}
-    repaired = save_alignment_previews(tmp_path / 'cache', manifest, manifest['datasets'], identities,
-                                       cfg, tmp_path / 'repaired-preview', relocated)
-    assert len(repaired['previews']) == 6 and not repaired['warnings']
-    assert all(p['relocated'] and p['cache_occupancy_verified'] for p in repaired['previews'])
-    near_experiment = {**experiment, 'metric': vars(replace(cfg, background_sampling='near_foreground', near_foreground_radius_patches=1))}
-    near_output = run_one(near_experiment)
-    near_result = json.loads((near_output / 'components.json').read_text())
-    assert all(row['n_background'] < row['n_background_all'] for row in near_result['per_dataset'])
-    assert near_result['config']['background_sampling'] == 'near_foreground'
-    assert len(near_result['alignment']['previews']) == 2
-    assert all(p['source'] == 'cache_preview' for p in near_result['alignment']['previews'])
-    assert 'saved during cache extraction' in (near_output / 'index.html').read_text()
-    monkeypatch.setattr('dino_peft.analysis.joint_run.compute_metric', forbidden)
+    result = json.loads((output / "components.json").read_text())
+    assert result["schema_version"] == 2
+    assert result["collection"]["A_collection"] == pytest.approx(1)
+    assert set(json.loads((output / "probe_split.json").read_text())) == {"a", "b"}
+    assert all(row["n_skipped_no_local_background"] == 20 for row in result["per_dataset"])
+    assert all(row["test_individual_balanced_accuracy"] == 1 for row in result["per_dataset"])
+    assert all(row["test_joint_balanced_accuracy"] == 1 for row in result["per_dataset"])
+    assert all((output / name).is_file() for name in ("local_vectors.npz", "probe_weights.npz",
+           "probe_split.json", "pairwise_alignment.csv", "probe_results.csv", "cloud_projection.npz",
+           "figs/alignment_matrix.svg", "figs/linear_probe.png", "figs/local_clouds.png"))
+    with np.load(output / "local_vectors.npz") as data:
+        assert len(data["vectors"]) == 40
+        assert data["vectors"].shape[1] == 3
+    html = (output / "index.html").read_text()
+    assert "barycenter" not in html.lower() and "Global risk" not in html
+    assert "src=\"data:image/png;base64," in html
+    assert len(result["alignment"]["previews"]) == 6
+    assert all(p["cache_occupancy_verified"] for p in result["alignment"]["previews"])
+    legacy = tmp_path / "results" / "old" / "run"
+    legacy.mkdir(parents=True)
+    (legacy / "components.json").write_text(json.dumps({"schema_version": 1, "collection": {"G": 9}}))
+    assert len(summarize_results(tmp_path / "results")) == 1
+    assert "old/run" not in (tmp_path / "results" / "index.html").read_text()
+    assert "G" not in (tmp_path / "results" / "all_collections.csv").read_text().splitlines()[0]
     assert run_one(experiment) == output
-    recompute(output / 'components.json', tmp_path / 'alternative', formula='consensus')
-    assert (tmp_path / 'alternative/cloud_projection.npz').read_bytes() == (output / 'cloud_projection.npz').read_bytes()
-    assert len(list((tmp_path / 'alternative/figs/alignment').glob('*.png'))) == 6
-    refresh_alignment_report(output / 'components.json', {'collections': {}, 'backbones': {}})
-    refreshed = json.loads((output / 'components.json').read_text())
-    assert refreshed['collection']['G'] == result['collection']['G']
-    assert len(refreshed['alignment']['previews']) == 2
-    assert all(p['source'] == 'cache_preview' for p in refreshed['alignment']['previews'])
-    with (tmp_path / 'cache/a/0000000.npz').open('ab') as f:
-        f.write(b'corrupted')
-    with pytest.raises(ValueError, match='checksum'):
+    manifest = load_cache_manifest(tmp_path / "cache")
+    assert manifest["extraction_hash"] == result["cache_hash"]
+    with (tmp_path / "cache/a/0000000.npz").open("ab") as file:
+        file.write(b"corrupted")
+    with pytest.raises(ValueError, match="checksum"):
         run_one(experiment)
 
 
-def test_shared_config_and_cluster_dependencies(tmp_path):
-    config = load_config('configs/cluster/joint_metric.yaml')
-    assert config['metric']['sinkhorn_scaling'] == .99
-    for collection in config['collections']:
-        for backbone in config['backbones']:
-            experiment = resolve_experiment(config, collection, backbone)
-            sources = _resolve_sources(experiment)
-            assert len(sources) == 3
-            assert all(s['preprocessing']['binarize_threshold'] == (0 if collection == 'deepbacs' else 128) for s in sources)
-            assert sources[0]['preprocessing']['img_size']['mode'] == ('native' if collection == 'deepbacs' else 'longest_edge')
-            if collection == 'em':
-                assert all('/DINO-LoRA/datasets/EM/' in s['image_dir'] for s in sources)
-    # Dry-run never calls a scheduler, but exercises the exact submission builder.
-    run = subprocess.run([sys.executable, 'scripts/joint_metric.py', 'submit', '--collection', 'all', '--backbone', 'all', '--dry-run'], check=True, text=True, capture_output=True)
-    assert run.stdout.count('--parsable') == 13
-    assert '--dependency=afterok:900000' in run.stdout
-    assert '--dependency=afterany:900001:900003:900005:900007:900009:900011' in run.stdout
-    assert load_config('configs/cluster/joint_metric.yaml')['metric']['background_sampling'] == 'near_foreground'
-    preview = subprocess.run([sys.executable, 'scripts/joint_metric.py', 'submit', '--previews-only',
-                              '--components', str(tmp_path / 'components.json'), '--dry-run'],
-                             check=True, text=True, capture_output=True)
-    assert '--job-name=joint-previews' in preview.stdout
-    assert '--gpus=' not in preview.stdout
+def test_shared_config_and_slurm_dry_run():
+    cfg = load_config("configs/cluster/joint_metric.yaml")
+    assert cfg["metric"]["near_foreground_radius_patches"] == 2
+    assert "sinkhorn_scaling" not in cfg["metric"]
+    completed = subprocess.run([sys.executable, "scripts/joint_metric.py", "submit", "--collection", "em",
+                                "--backbone", "dinov3", "--metrics-only", "--dry-run"],
+                               check=True, text=True, capture_output=True)
+    assert "--job-name=joint-compute" in completed.stdout
+    assert "--gpus=" not in completed.stdout

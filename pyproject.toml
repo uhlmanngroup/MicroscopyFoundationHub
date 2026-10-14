@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-joint-metric = ["geomloss>=0.2.6,<0.4", "matplotlib>=3.6"]
+joint-metric = ["matplotlib>=3.6"]
 test = ["pytest>=8,<9"]
 
 [tool.setuptools]

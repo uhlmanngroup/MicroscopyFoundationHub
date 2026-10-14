@@ -198,9 +198,10 @@ Fréchet-distance domain analysis, and result aggregation — see
 
 ## Joint-training compatibility diagnostic
 
-Frozen spatial features and mask occupancy are cached once; the metric and risk
-formula can then change without rerunning the backbone. Results include offline
-HTML navigation, per-dataset components, CSVs and plots.
+Frozen spatial features and mask occupancy are cached once. The analysis compares
+local foreground/background directions across datasets and separately checks a
+shared versus individual linear probe, without rerunning the backbone. Results
+include an offline HTML report, CSVs and plots.
 
 ```bash
 pip install -e '.[joint-metric]'

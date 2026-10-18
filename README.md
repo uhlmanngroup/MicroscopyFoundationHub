@@ -162,9 +162,29 @@ data paths, `task_type` or `experiment_id` — the configs and sweeps all carry 
 worth knowing before renaming anything, because losing it removes the per-dataset numbers
 silently rather than failing.
 
-**Before your first submission,** edit the cluster-specific paths at the top of each
-`grid_*.sbatch` — `PY`, `DATA_ROOT`, `RESULTS_ROOT`, and the DINOv3 `WEIGHTS` location. The
-configs under `configs/cluster/` likewise carry absolute paths from the original machines.
+### Corrected joint EM reruns
+
+After the Lucchi pairing correction, submit only the missing five paper cells from the
+cluster repository root:
+
+```bash
+bash slurm/em/submit_triplet_missing.sh
+```
+
+This prepares and validates `EM/TRIPLET_LUCCHI_FIXED`, then submits DINOv3 LoRA,
+OpenCLIP ViT-L/14 LoRA, and DINOv2 ViT-L/14 frozen, LoRA, and full fine-tuning.
+Each cell runs seeds 1–5 and split seeds 101–105. LoRA uses attention projections
+with rank 16 and alpha 32; training uses at most 1000 epochs with patience 20.
+The full fine-tuning job uses batch size 1 to fit GPU memory; the other jobs use 2.
+Checkpoints, per-run metrics, and the five-seed mean/std CSV go to
+`/home/cfuste/scratch/DINO-LoRA`, under each model's result tree and
+`triplet_lucchi_fixed_summary/` respectively. Set `RUN_TAG` when launching a new
+independent sweep so existing run directories cannot be overwritten.
+
+For older grid scripts, check the cluster-specific paths before submission. The corrected
+joint EM sweep above reads paths from `configs/paths.yaml` (or `DINO_PEFT_*` environment
+overrides); its Python interpreter defaults to `$HOME/data/conda/envs/dino-peft/bin/python`
+and can be overridden with `PY`.
 
 To run a single job locally, for debugging:
 

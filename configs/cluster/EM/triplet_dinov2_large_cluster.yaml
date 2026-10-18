@@ -1,0 +1,47 @@
+# Joint EM (VNC + Lucchi++ + Kasthuri++), DINOv2 ViT-L/14.
+# The sweep selects head, LoRA, or full fine-tuning and supplies explicit seeds.
+extends: defaults
+
+train_img_dir: "${data_root}/EM/TRIPLET_LUCCHI_FIXED/train/images"
+train_mask_dir: "${data_root}/EM/TRIPLET_LUCCHI_FIXED/train/masks"
+test_img_dir: "${data_root}/EM/TRIPLET_LUCCHI_FIXED/test/images"
+test_mask_dir: "${data_root}/EM/TRIPLET_LUCCHI_FIXED/test/masks"
+
+experiment_id: "triplet_dinov2_large_sweep_base"
+results_root: "${scratch_root}/dinov2"
+task_type: "seg/triplet-head"
+
+dataset:
+  type: paired
+  params:
+    pair_mode: stem
+    recursive: false
+
+backbone:
+  name: dinov2
+  variant: large
+  load_backend: torchhub
+  weights: null
+  repo_dir: null
+  preprocess:
+    preset: em
+dino_size: large
+img_size:
+  mode: longest_edge
+  target: 1022
+  patch_multiple: 14
+  rounding: floor
+num_classes: 2
+
+use_lora: false
+full_finetune: false
+lora_rank: 16
+lora_alpha: 32
+lora:
+  enabled: false
+  target_policy: vit_attention_only
+  layer_selection: all
+  exclude: [head, decoder, seg_head]
+  compatibility_mode: true
+
+class_weights: [1.0, 15.0]

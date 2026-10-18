@@ -20,6 +20,8 @@ runs/*
 # Macbook Setup
 .vscode/*
 .DS_Store
+docs/media/joint_em_rerun/*
+
 
 # Distribution / packaging
 .Python

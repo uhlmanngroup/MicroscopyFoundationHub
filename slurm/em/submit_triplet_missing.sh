@@ -24,7 +24,10 @@ for CELL in dinov3_lora openclip_lora dinov2_frozen dinov2_lora dinov2_fullft; d
 done
 
 dependency=$(IFS=:; echo "${jobs[*]}")
-summary_job=$(sbatch --parsable --dependency="afterok:$dependency" \
-  --export=ALL,RUN_TAG="$RUN_TAG",SUMMARY_CELLS=dinov3_lora,openclip_lora,dinov2_frozen,dinov2_lora,dinov2_fullft \
+# Slurm parses commas in --export as variable separators. Put the cell list in
+# the submission environment so it reaches the summary job intact.
+summary_job=$(SUMMARY_CELLS=dinov3_lora,openclip_lora,dinov2_frozen,dinov2_lora,dinov2_fullft \
+  sbatch --parsable --dependency="afterok:$dependency" \
+  --export=ALL,RUN_TAG="$RUN_TAG" \
   slurm/em/summarize_triplet_lucchi_fixed.sbatch)
 echo "Submitted five-seed summary: job $summary_job (after all 25 experiments succeed)"

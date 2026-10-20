@@ -1,0 +1,39 @@
+# Five-seed VNC/Drosophila DINOv2-L LoRA rerun matching the 2025-12-11 run.
+extends: defaults
+train_img_dir: "${data_root}/EM/Droso/Train_In"
+train_mask_dir: "${data_root}/EM/Droso/Train_Out"
+test_img_dir: "${data_root}/EM/Droso/Test_In"
+test_mask_dir: "${data_root}/EM/Droso/Test_Out"
+results_root: "${scratch_root}/dinov2"
+task_type: "seg/single/droso-lora"
+experiment_id: "2026-10-20_droso_dinov2_large_lora"
+dataset:
+  type: droso
+  params:
+    recursive: true
+backbone:
+  name: dinov2
+  variant: large
+  load_backend: torchhub
+  weights: null
+  repo_dir: null
+  preprocess:
+    preset: em
+dino_size: large
+img_size:
+  mode: longest_edge
+  target: 1022
+  patch_multiple: 14
+  rounding: floor
+num_classes: 2
+use_lora: true
+full_finetune: false
+lora_rank: 16
+lora_alpha: 32
+lora_targets: [attn.qkv, attn.proj]
+batch_size: 1
+num_workers: 0
+amp: false
+loss: dice
+class_weights: [1.0, 15.0]
+binarize_threshold: 128

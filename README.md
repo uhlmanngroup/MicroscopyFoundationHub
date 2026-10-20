@@ -181,6 +181,17 @@ Checkpoints, per-run metrics, and the five-seed mean/std CSV go to
 `triplet_lucchi_fixed_summary/` respectively. Set `RUN_TAG` when launching a new
 independent sweep so existing run directories cannot be overwritten.
 
+To rebuild the full summary from completed runs without retraining, submit:
+
+```bash
+RUN_TAG=2026-10-18_joint_em_missing \
+SUMMARY_CELLS=dinov3_lora,openclip_lora,dinov2_frozen,dinov2_lora,dinov2_fullft \
+sbatch --export=ALL slurm/em/summarize_triplet_lucchi_fixed.sbatch
+```
+
+Keep the comma-separated `SUMMARY_CELLS` value in the environment, not inside
+Slurm's comma-separated `--export` argument.
+
 For older grid scripts, check the cluster-specific paths before submission. The corrected
 joint EM sweep above reads paths from `configs/paths.yaml` (or `DINO_PEFT_*` environment
 overrides); its Python interpreter defaults to `$HOME/data/conda/envs/dino-peft/bin/python`

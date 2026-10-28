@@ -1,5 +1,5 @@
 #!/usr/bin/bash -l
-#SBATCH --job-name=em-triplet-recheck
+#SBATCH --job-name=em-seg-config
 #SBATCH --time=12:00:00
 #SBATCH --gpus=H100:1
 #SBATCH --constraint=H100

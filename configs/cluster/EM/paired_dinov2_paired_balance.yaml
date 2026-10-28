@@ -1,18 +1,17 @@
-# Environment: cluster (UZH Science) - paired Lucchi++ + Droso dataset
-# Edit paths + results_root as needed.
+# Environment: cluster (UZH Science) - paired Lucchi++ + VNC 17/3 dataset
 
 extends: defaults
 
 # ---- I/O ----
-train_img_dir: "${data_root}/EM/DINO-POC/train/images"
-train_mask_dir: "${data_root}/EM/DINO-POC/train/masks"
-test_img_dir: "${data_root}/EM/DINO-POC/test/images"
-test_mask_dir: "${data_root}/EM/DINO-POC/test/masks"
+train_img_dir: "${data_root}/EM/PAIRED_LUCCHI_VNC_17_3/train/images"
+train_mask_dir: "${data_root}/EM/PAIRED_LUCCHI_VNC_17_3/train/masks"
+test_img_dir: "${data_root}/EM/PAIRED_LUCCHI_VNC_17_3/test/images"
+test_mask_dir: "${data_root}/EM/PAIRED_LUCCHI_VNC_17_3/test/masks"
 
 # results + experiment naming
-experiment_id: "ablation_paired_balance_dinov2"
-results_root: "${results_root}/dinov2"
-task_type: "seg"
+experiment_id: "2026-10-27_paired_balance_dinov2_large"
+results_root: "${scratch_root}/dinov2"
+task_type: "seg/paired-balance"
 
 # paired dataset (filenames include 'lucchi' or 'droso')
 dataset:
@@ -24,13 +23,13 @@ dataset:
 # ---- model / backbone ----
 backbone:
   name: dinov2
-  variant: base
+  variant: large
   load_backend: torchhub
   weights: null
   repo_dir: null
   preprocess:
     preset: em
-dino_size: base
+dino_size: large
 img_size:
   mode: longest_edge
   target: 1022

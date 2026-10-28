@@ -80,7 +80,7 @@ def main() -> int:
                 if cell.startswith("dinov2_triplet"):
                     if config["backbone"]["variant"] != "large":
                         raise ValueError("DINOv2 triplet variant mismatch")
-                    if config["lora_rank"] != 8 or config["lora_alpha"] != 16:
+                    if config["lora_rank"] != 16 or config["lora_alpha"] != 32:
                         raise ValueError("DINOv2 triplet LoRA settings mismatch")
                 if cell == "dinov2_vnc_lora":
                     if config["backbone"]["variant"] != "large":

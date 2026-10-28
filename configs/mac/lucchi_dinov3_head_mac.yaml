@@ -45,7 +45,8 @@ dataset:
 
 # ---- LoRA / head ----
 use_lora: false
-lora_rank: 8
+lora_rank: 16
+lora_alpha: 32
 lora:
   enabled: false
   target_policy: vit_attention_only

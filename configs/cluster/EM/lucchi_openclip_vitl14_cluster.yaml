@@ -47,9 +47,8 @@ img_size:
 num_classes: 2
 
 # ---- LoRA ----
-# Rank 16 / alpha 32 for every OpenCLIP run, EM and otherwise; the DINOv2 and DINOv3
-# DeepBacs and MoNuSAC runs use 8/16. Stated here so the value is visible in the run's
-# config_used.yaml rather than inherited silently.
+# Rank 16 / alpha 32, matching the current DINOv2 and DINOv3 configurations.
+# Stated here so the value is visible in config_used.yaml.
 lora_rank: 16
 lora_alpha: 32
 lora:

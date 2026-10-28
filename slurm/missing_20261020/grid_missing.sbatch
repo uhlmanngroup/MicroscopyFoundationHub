@@ -36,7 +36,7 @@ case "$CELL" in
     BATCH_SIZE=2
     [ "$MODE" = fullft ] && BATCH_SIZE=1
     extra=(--set backbone.name=dinov2 --set backbone.variant=large
-           --set dino_size=large --set lora_rank=8 --set lora_alpha=16)
+           --set dino_size=large --set lora_rank=16 --set lora_alpha=32)
     ;;
   openclip_aureus_lora|openclip_coli_lora|openclip_subtilis_lora|openclip_triplet_lora)
     DATASET=${CELL#openclip_}

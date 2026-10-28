@@ -39,7 +39,8 @@ dataset:
 # ---- LoRA / head ----
 use_lora: false          # head-only for a quicker sanity run
 lora_targets: [attn.qkv, attn.proj]
-lora_rank: 8
+lora_rank: 16
+lora_alpha: 32
 
 # ---- training ----
 batch_size: 1

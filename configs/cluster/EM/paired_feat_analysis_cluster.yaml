@@ -1,29 +1,29 @@
-# Feature analysis on the cluster using the paired DINO-POC dataset.
+# Feature and domain analysis on paired Lucchi++/VNC test images.
 #
-# Results land in:
-#   ${results_root}/dinov2/em/feat-analysis/paired-nolora/<experiment_id>
+# Results land under ${scratch_root}/dinov2/em/feat-analysis/.
 
-experiment_id: "2025-01-05_F1_dinopoc_dinov2-base_lora-r16_feats"
-results_root: "${results_root}/dinov2"
-task_type: "feat-analysis/paired-nolora"
+experiment_id: "2026-10-27_paired_dinov2_large_features"
+results_root: "${scratch_root}/dinov2"
+task_type: "feat-analysis/paired"
 
 data:
-  data_dir: "${data_root}/EM/DINO-POC/test/images"
+  data_dir: "${data_root}/EM/PAIRED_LUCCHI_VNC_17_3/test/images"
+  expected_groups: 2
 
 model:
   backbone:
     name: dinov2
-    variant: base
+    variant: large
     load_backend: torchhub
     weights: null
     repo_dir: null
     preprocess:
       preset: em
-  dino_size: "base"
-  checkpoint: "${ckpt_root}/dinov2/em/seg/paired-lora/2025-01-01_A2_dinopoc_dinov2-base_lora-r16_seg_pairedgrid24370385_rep1_s2_base/ckpts/best_model.pt"
+  dino_size: "large"
+  checkpoint: null
 
 runtime:
-  batch_size: 16
+  batch_size: 2
   num_workers: 4
   img_size:
     mode: longest_edge
@@ -33,7 +33,7 @@ runtime:
   device: "auto"
 
 pca:
-  n_components: 32
+  n_components: 50
   plot_dims: [0, 1]
   whiten: false
   l2norm: false
@@ -49,3 +49,13 @@ umap:
   seed: 0
 
 clahe_norm: false
+
+domain_analysis:
+  mode: pairwise_all
+  include_dataset_names: [lucchi, droso]
+  n_components: 64
+  seed: 0
+  output_subdir: domain-analysis
+  json_name: pairwise_metrics.json
+  csv_name: pairwise_metrics.csv
+  use_run_dir_metrics: false

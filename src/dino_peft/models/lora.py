@@ -18,8 +18,8 @@ class LoRALinear(nn.Module):
     def __init__(
         self,
         base_linear: nn.Linear,
-        r: int = 8,
-        alpha: int = 16,
+        r: int = 16,
+        alpha: int = 32,
         dropout: float = 0.0,
     ):
         super().__init__()
@@ -63,8 +63,8 @@ class LoRAMultiheadAttention(nn.Module):
     def __init__(
         self,
         base_attn: nn.MultiheadAttention,
-        r: int = 8,
-        alpha: int = 16,
+        r: int = 16,
+        alpha: int = 32,
         dropout: float = 0.0,
     ):
         super().__init__()
@@ -164,8 +164,8 @@ def _replace_module(model: nn.Module, name: str, new_module: nn.Module) -> None:
 def inject_lora_by_names(
     model: nn.Module,
     target_names: List[str],
-    r: int = 8,
-    alpha: int = 16,
+    r: int = 16,
+    alpha: int = 32,
     dropout: float = 0.0,
 ) -> List[str]:
     replaced: List[str] = []
@@ -200,7 +200,7 @@ def inject_lora_by_names(
     return replaced
 
 
-def inject_lora(model: nn.Module, target_substrings: List[str], r: int = 8, alpha: int = 16) -> List[str]:
+def inject_lora(model: nn.Module, target_substrings: List[str], r: int = 16, alpha: int = 32) -> List[str]:
     """
     Legacy substring-based injector. Prefer apply_peft()/inject_lora_by_names().
     """
@@ -369,8 +369,8 @@ def resolve_lora_cfg(cfg: Mapping) -> LoraConfig:
     exclude = list(lora_cfg.get("exclude") or [])
     if not exclude:
         exclude = ["head", "decoder", "seg_head"]
-    r = int(lora_cfg.get("rank", cfg.get("lora_rank", 8)))
-    alpha = int(lora_cfg.get("alpha", cfg.get("lora_alpha", 16)))
+    r = int(lora_cfg.get("rank", cfg.get("lora_rank", 16)))
+    alpha = int(lora_cfg.get("alpha", cfg.get("lora_alpha", 32)))
     dropout = float(lora_cfg.get("dropout", cfg.get("lora_dropout", 0.0)))
     compatibility_mode = bool(lora_cfg.get("compatibility_mode", True))
     return LoraConfig(

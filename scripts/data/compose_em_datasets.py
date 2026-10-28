@@ -9,6 +9,7 @@ Example (local; absolute paths are user-specific):
 """
 
 from pathlib import Path
+import argparse
 import csv, shutil, random
 
 # =========================
@@ -42,6 +43,14 @@ def list_images_recursive(d: Path):
 def pair_by_stem(imgs, masks):
     m = {p.stem: p for p in masks}
     return [(ip, m[ip.stem]) for ip in imgs if ip.stem in m]
+
+def pair_by_stem_strict(imgs, masks, label):
+    if len({p.stem for p in imgs}) != len(imgs) or len({p.stem for p in masks}) != len(masks):
+        raise RuntimeError(f"{label}: duplicate image or mask stems")
+    pairs = pair_by_stem(imgs, masks)
+    if len(pairs) != len(imgs) or len(pairs) != len(masks):
+        raise RuntimeError(f"{label}: incomplete stem pairing: {len(imgs)} images, {len(masks)} masks, {len(pairs)} pairs")
+    return pairs
 
 def pair_by_sorted(imgs, masks):
     if len(imgs) != len(masks):
@@ -124,10 +133,29 @@ def stage_pairs(pairs, out_split_dir: Path, tag: str, split: str, start_idx: int
 # main
 # =========================
 def main():
+    global LUCCHI_ROOT, OUT_ROOT, STAGE_MODE
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--lucchi-root", type=Path, default=LUCCHI_ROOT)
+    ap.add_argument("--out-root", type=Path, default=OUT_ROOT)
+    ap.add_argument("--stage-mode", choices=("symlink", "copy"), default=STAGE_MODE)
+    ap.add_argument("--droso-train-images", type=Path)
+    ap.add_argument("--droso-train-masks", type=Path)
+    ap.add_argument("--droso-test-images", type=Path)
+    ap.add_argument("--droso-test-masks", type=Path)
+    args = ap.parse_args()
+    LUCCHI_ROOT, OUT_ROOT, STAGE_MODE = args.lucchi_root, args.out_root, args.stage_mode
+    split_dirs = (args.droso_train_images, args.droso_train_masks,
+                  args.droso_test_images, args.droso_test_masks)
+    if any(p is not None for p in split_dirs) and not all(p is not None for p in split_dirs):
+        ap.error("Provide all four --droso-{train,test}-{images,masks} directories")
+
     # sanity paths
-    for p in [DROSO_IMG, DROSO_MSK, LUCCHI_ROOT]:
+    for p in ([*split_dirs, LUCCHI_ROOT] if all(split_dirs) else [DROSO_IMG, DROSO_MSK, LUCCHI_ROOT]):
         if not p.exists():
             raise SystemExit(f"Missing path: {p}")
+
+    if all(split_dirs) and OUT_ROOT.exists() and any(OUT_ROOT.iterdir()):
+        raise SystemExit(f"Output directory is not empty: {OUT_ROOT}. Use a fresh --out-root.")
 
     ensure_out_dirs(OUT_ROOT)
     mapping_csv = OUT_ROOT / "mapping.csv"
@@ -135,21 +163,30 @@ def main():
     counts = {}
 
     # ---------- Drosophila (85/15 split) ----------
-    di = list_images_recursive(DROSO_IMG)
-    dm = list_images_recursive(DROSO_MSK)
-    if not di or not dm:
-        raise SystemExit("Droso: no images or masks found (check paths/extensions).")
-
-    droso_pairs = pair_by_stem(di, dm)
-    if not droso_pairs:
-        # fallback if stems mismatch
-        droso_pairs = pair_by_sorted(di, dm)
-
-    random.Random(SEED).shuffle(droso_pairs)
-    n_total = len(droso_pairs)
-    n_train = int(round(DROSO_TRAIN_RATIO * n_total))
-    droso_train = droso_pairs[:n_train]
-    droso_test  = droso_pairs[n_train:]
+    if all(split_dirs):
+        droso_train = pair_by_stem_strict(
+            list_images_recursive(args.droso_train_images),
+            list_images_recursive(args.droso_train_masks), "Droso train")
+        droso_test = pair_by_stem_strict(
+            list_images_recursive(args.droso_test_images),
+            list_images_recursive(args.droso_test_masks), "Droso test")
+        if len(droso_train) != 17 or len(droso_test) != 3:
+            raise SystemExit(f"Expected VNC 17 train / 3 test, got {len(droso_train)} / {len(droso_test)}")
+        overlap = {image.stem for image, _ in droso_train} & {image.stem for image, _ in droso_test}
+        if overlap:
+            raise SystemExit(f"VNC train/test slice overlap: {sorted(overlap)}")
+    else:
+        di = list_images_recursive(DROSO_IMG)
+        dm = list_images_recursive(DROSO_MSK)
+        if not di or not dm:
+            raise SystemExit("Droso: no images or masks found (check paths/extensions).")
+        droso_pairs = pair_by_stem(di, dm)
+        if not droso_pairs:
+            droso_pairs = pair_by_sorted(di, dm)
+        random.Random(SEED).shuffle(droso_pairs)
+        n_train = int(round(DROSO_TRAIN_RATIO * len(droso_pairs)))
+        droso_train = droso_pairs[:n_train]
+        droso_test = droso_pairs[n_train:]
 
     _ = stage_pairs(droso_train, OUT_ROOT / "train", "droso", "train", start_idx=0, mapping_rows=mapping_rows, counts=counts)
     _ = stage_pairs(droso_test,  OUT_ROOT / "test",  "droso", "test",  start_idx=0, mapping_rows=mapping_rows, counts=counts)
@@ -168,17 +205,12 @@ def main():
     li_te = list_images_recursive(test_in)
     lm_te = list_images_recursive(test_out)
 
-    if not li_tr or not lm_tr:
-        print("WARNING: Lucchi Train_* empty or unmatched; skipping Lucchi train.")
-    else:
-        lucchi_train = pair_lucchi(li_tr, lm_tr)
-        _ = stage_pairs(lucchi_train, OUT_ROOT / "train", "lucchi", "train", start_idx=0, mapping_rows=mapping_rows, counts=counts)
-
-    if not li_te or not lm_te:
-        print("WARNING: Lucchi Test_* empty or unmatched; skipping Lucchi test.")
-    else:
-        lucchi_test = pair_lucchi(li_te, lm_te)
-        _ = stage_pairs(lucchi_test, OUT_ROOT / "test", "lucchi", "test", start_idx=0, mapping_rows=mapping_rows, counts=counts)
+    lucchi_train = pair_lucchi(li_tr, lm_tr)
+    lucchi_test = pair_lucchi(li_te, lm_te)
+    if len(lucchi_train) != 165 or len(lucchi_test) != 165:
+        raise SystemExit(f"Expected Lucchi++ 165 train / 165 test, got {len(lucchi_train)} / {len(lucchi_test)}")
+    _ = stage_pairs(lucchi_train, OUT_ROOT / "train", "lucchi", "train", start_idx=0, mapping_rows=mapping_rows, counts=counts)
+    _ = stage_pairs(lucchi_test, OUT_ROOT / "test", "lucchi", "test", start_idx=0, mapping_rows=mapping_rows, counts=counts)
 
     # ---------- write mapping ----------
     with mapping_csv.open("w", newline="") as f:

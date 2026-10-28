@@ -33,7 +33,7 @@ from dino_peft.config import load_config
 
 
 class BalancedPairBatchSampler:
-    """Yield 1 Lucchi + 1 Droso per batch; stop at the shorter list."""
+    """Yield 1 Lucchi + 1 Droso per batch, repeating the smaller domain."""
 
     def __init__(self, lucchi_indices, droso_indices, seed=0):
         self.lucchi_indices = list(lucchi_indices)
@@ -47,13 +47,17 @@ class BalancedPairBatchSampler:
         droso = self.droso_indices[:]
         rng.shuffle(lucchi)
         rng.shuffle(droso)
-        n = min(len(lucchi), len(droso))
+        n = max(len(lucchi), len(droso))
         for i in range(n):
-            yield [lucchi[i], droso[i]]
+            if i and i % len(lucchi) == 0:
+                rng.shuffle(lucchi)
+            if i and i % len(droso) == 0:
+                rng.shuffle(droso)
+            yield [lucchi[i % len(lucchi)], droso[i % len(droso)]]
         self.epoch += 1
 
     def __len__(self):
-        return min(len(self.lucchi_indices), len(self.droso_indices))
+        return max(len(self.lucchi_indices), len(self.droso_indices))
 
 
 def _load_cfg(path: Path):
@@ -119,6 +123,7 @@ def _partition_indices_by_name(pairs):
 def _build_training_cfg(base_cfg, variant: str, seed: int, out_root: Path | None, epochs_override: int | None):
     cfg = deepcopy(base_cfg)
     cfg["seed"] = int(seed)
+    cfg["split_seed"] = 100 + int(seed)
     if epochs_override is not None:
         cfg["epochs"] = int(epochs_override)
 

@@ -37,11 +37,9 @@ num_classes: 2
 
 # ---- fine-tuning ----
 use_lora: true
-# NOTE: these runs used the implicit LoRA fallback (rank 8, alpha 16), not the
-# rank 16 / alpha 32 used by the EM and OpenCLIP configs. Pinned explicitly so the
-# value is visible and unchanged; see git history before altering.
-lora_rank: 8
-lora_alpha: 16
+# Current LoRA setting for new runs; completed runs keep their saved configs.
+lora_rank: 16
+lora_alpha: 32
 
 full_finetune: false
 

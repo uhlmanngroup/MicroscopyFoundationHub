@@ -36,10 +36,10 @@ All three regimes train the same decoder (1×1 stem → four transposed-conv ups
 | **LoRA** | Frozen + low-rank adapters | Decoder + adapters | `use_lora: true` |
 | **End-to-end** | Fully trainable | Everything | `use_lora: false`, `full_finetune: true` |
 
-LoRA targets ViT attention projections only (`target_policy: vit_attention_only`). Rank and
-α are not uniform across the benchmark: the EM runs and every OpenCLIP run use rank 16 / α 32,
-while the DeepBacs and MoNuSAC DINOv2 and DINOv3 runs use rank 8 / α 16. Each config states
-its own values explicitly.
+LoRA targets ViT attention projections only (`target_policy: vit_attention_only`).
+Current run configurations use rank 16 / α 32 across all datasets and backbones.
+Completed runs retain the settings recorded in their saved configurations; runs made
+with rank 8 / α 16 must be rerun for a uniform rank-16 comparison.
 
 ## Datasets
 

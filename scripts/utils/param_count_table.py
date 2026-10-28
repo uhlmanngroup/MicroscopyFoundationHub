@@ -21,7 +21,7 @@ import yaml
 from dino_peft.backbones import build_backbone
 from dino_peft.models.head_seg1x1 import SegHeadDeconv
 from dino_peft.models.lora import apply_peft
-from dino_peft.config import load_config
+from dino_peft.config import load_config as load_project_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -64,7 +64,7 @@ def parse_args() -> argparse.Namespace:
 def load_config(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"Config file not found: {path}")
-    cfg = load_config(path)
+    cfg = load_project_config(path)
     if not cfg:
         raise ValueError(f"Config file {path} is empty or invalid.")
     return cfg

@@ -9,7 +9,7 @@ test_img_dir:   "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinope
 test_mask_dir:  "/Users/cfuste/Documents/Data/ElectronMicroscopy/composed-dinopeft/test/masks"
 
 # results + experiment naming (edit before each run)
-experiment_id: "2026-01-08_paired_dinov3-vits16_lora-r8_seg"
+experiment_id: "2026-01-08_paired_dinov3-vits16_lora-r16_seg"
 results_root: "/Users/cfuste/Documents/Results/DINO-LoRA"
 task_type: "seg"
 
@@ -38,7 +38,8 @@ dataset:
 
 # ---- LoRA / head ----
 use_lora: true   # legacy flag (apply_peft uses lora.enabled)
-lora_rank: 8
+lora_rank: 16
+lora_alpha: 32
 lora:
   enabled: true
   target_policy: vit_attention_only

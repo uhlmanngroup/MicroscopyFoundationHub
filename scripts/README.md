@@ -6,6 +6,34 @@ Absolute paths in some examples are user-specific. Update them for your environm
 ## Training And Evaluation
 - `scripts/train_em_seg.py`: train segmentation from a YAML config
 - `scripts/eval_em_seg.py`: evaluate a trained run and write metrics/figs
+- `scripts/eval_transferability.py`: inference-only cross-dataset evaluation of
+  five frozen DINOv3-L single-dataset checkpoints per source. Within EM it
+  covers VNC (`droso`), Kasthuri++, and Lucchi++; within DeepBacs it covers
+  coli, aureus, and subtilis. Each checkpoint is evaluated once on each of the
+  other two test sets. It writes individual results to `runs/`, then
+  `transfer_runs.csv` and `transfer_summary.csv` (mean and sample SD across
+  the trained heads), plus a foreground-IoU matrix for each modality. Target
+  test pairing and mask rules come from the target
+  config; image preprocessing and the trained head come from the source
+  checkpoint, which also identifies the pretrained backbone weights.
+
+Cluster submission (inference only, followed by aggregation):
+
+```bash
+python scripts/eval_transferability.py --dry-run
+bash slurm/submit_transferability_dinov3_frozen.sh
+```
+
+The default paths use `configs/paths.yaml`. For copied runs or local data, pass
+`--runs-root`, `--em-data-root`, and `--deepbacs-data-root`. The trained
+`best_model.pt` files and the pretrained DINOv3-L weights must be accessible;
+use `--backbone-weights` and `--dinov3-repo-dir` if their saved paths changed.
+The Slurm launcher accepts `TRANSFER_RUNS_ROOT`, `TRANSFER_DATA_ROOT`, and
+`TRANSFER_OUT_DIR` for path overrides.
+Use `--include-diagonal` to add in-domain control scores, or
+`TRANSFER_INCLUDE_DIAGONAL=1 bash slurm/submit_transferability_dinov3_frozen.sh`
+for the cluster array. Use `--job-index N` to run one source/seed job. The
+summary command requires all requested jobs and distinct checkpoint seeds.
 
 Notes:
 - Segmentation run directories are now modality-aware via config key `modality` (`em` or `deepbacs`).

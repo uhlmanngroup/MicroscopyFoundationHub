@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 
 from scripts.eval_transferability import (
-    aggregate, build_jobs, compose_target_config, result_path, summarize_results,
+    aggregate, build_jobs, compose_target_config, missing_jobs, result_path,
+    summarize_results,
 )
 
 
@@ -121,6 +122,26 @@ class TransferabilityTests(unittest.TestCase):
                 matrix = list(csv.DictReader(handle))
             self.assertEqual(len(matrix), 3)
             self.assertEqual(matrix[0][matrix[0]["source"]], "")
+
+    def test_missing_jobs_report_whole_and_partial_inference_tasks(self):
+        with tempfile.TemporaryDirectory() as root:
+            out_dir = Path(root)
+            jobs = build_jobs("em", [1, 2], False, out_dir / "checkpoints")
+            for job in jobs[2:]:
+                for target in job.targets:
+                    path = result_path(out_dir, job, target)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("{}")
+            first_target = jobs[1].targets[0]
+            partial_path = result_path(out_dir, jobs[1], first_target)
+            partial_path.parent.mkdir(parents=True, exist_ok=True)
+            partial_path.write_text("{}")
+
+            missing = missing_jobs(out_dir, jobs)
+            self.assertEqual([(index, targets) for index, _, targets in missing],
+                             [(0, jobs[0].targets), (1, jobs[1].targets[1:])])
+            with self.assertRaisesRegex(FileNotFoundError, "array indices: 0,1"):
+                aggregate(out_dir, jobs)
 
 
 if __name__ == "__main__":

@@ -108,6 +108,17 @@ def result_path(out_dir: Path, job: Job, target: str) -> Path:
     return out_dir / "runs" / job.modality / job.source / f"rep{job.rep}" / f"{target}.json"
 
 
+def missing_jobs(out_dir: Path, jobs: Iterable[Job]) -> list[tuple[int, Job, tuple[str, ...]]]:
+    """Return every source/repetition job with one or more missing target results."""
+    return [
+        (index, job, missing)
+        for index, job in enumerate(jobs)
+        if (missing := tuple(
+            target for target in job.targets if not result_path(out_dir, job, target).is_file()
+        ))
+    ]
+
+
 def _validate_result_row(row: Mapping, job: Job, target: str) -> None:
     for field, expected in (("modality", job.modality), ("source", job.source),
                             ("target", target), ("rep", job.rep)):
@@ -176,12 +187,18 @@ def _write_csv(path: Path, fieldnames: tuple[str, ...], rows: Iterable[Mapping])
 
 
 def aggregate(out_dir: Path, jobs: list[Job]) -> None:
+    missing = missing_jobs(out_dir, jobs)
+    if missing:
+        indices = ",".join(str(index) for index, _, _ in missing)
+        raise FileNotFoundError(
+            f"Missing results for {len(missing)} inference job(s); "
+            f"resubmit Slurm array indices: {indices}. "
+            "Run --list-missing for the source, repetition, and target details."
+        )
     rows = []
     for job in jobs:
         for target in job.targets:
             path = result_path(out_dir, job, target)
-            if not path.is_file():
-                raise FileNotFoundError(f"Missing transfer result: {path}")
             rows.append(json.loads(path.read_text()))
     summary = summarize_results(rows, jobs)
     _write_csv(out_dir / "transfer_runs.csv", LONG_FIELDS,
@@ -349,6 +366,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-index", type=int, help="Run one source/rep job (0..29 for both modalities, five reps)")
     parser.add_argument("--include-diagonal", action="store_true", help="Also score each model on its own test set")
     parser.add_argument("--aggregate-only", action="store_true", help="Summarize completed inference results without loading models")
+    parser.add_argument("--list-missing", action="store_true", help="List missing result files and Slurm array indices without loading models")
     parser.add_argument("--dry-run", action="store_true", help="Print jobs, paths, and missing checkpoints/data without inference")
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu")
@@ -363,11 +381,13 @@ def main() -> int:
         raise ValueError("--reps must contain distinct positive repetition numbers")
     if args.num_workers < 0:
         raise ValueError("--num-workers must be nonnegative")
-    if args.job_index is not None and args.aggregate_only:
-        raise ValueError("--job-index and --aggregate-only cannot be combined")
+    if args.job_index is not None and (args.aggregate_only or args.list_missing):
+        raise ValueError("--job-index cannot be combined with --aggregate-only or --list-missing")
+    if args.aggregate_only and args.list_missing:
+        raise ValueError("--aggregate-only and --list-missing cannot be combined")
     requested_modalities = tuple(DATASETS) if args.modality == "both" else (args.modality,)
     needs_data_paths = (
-        not args.aggregate_only and args.data_root is None
+        not (args.aggregate_only or args.list_missing) and args.data_root is None
         and (("em" in requested_modalities and args.em_data_root is None)
              or ("deepbacs" in requested_modalities and args.deepbacs_data_root is None))
     )
@@ -384,6 +404,15 @@ def main() -> int:
     out_dir = args.out_dir or runs_root / "transferability" / "dinov3_frozen"
     jobs = build_jobs(args.modality, args.reps, args.include_diagonal, runs_root)
 
+    if args.list_missing:
+        missing = missing_jobs(out_dir, jobs)
+        for index, job, targets in missing:
+            print(f"{index:02d} {job.modality}/{job.source}/rep{job.rep}: missing {', '.join(targets)}")
+        if missing:
+            print("Slurm array indices: " + ",".join(str(index) for index, _, _ in missing))
+        else:
+            print(f"All {sum(len(job.targets) for job in jobs)} transfer results are present.")
+        return 0
     if args.aggregate_only:
         aggregate(out_dir, jobs)
         return 0

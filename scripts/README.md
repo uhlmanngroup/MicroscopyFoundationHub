@@ -34,6 +34,8 @@ Use `--include-diagonal` to add in-domain control scores, or
 `TRANSFER_INCLUDE_DIAGONAL=1 bash slurm/submit_transferability_dinov3_frozen.sh`
 for the cluster array. Use `--job-index N` to run one source/seed job. The
 summary command requires all requested jobs and distinct checkpoint seeds.
+If aggregation reports missing results, use `--list-missing` with the same
+`--out-dir` to see the exact array indices and target datasets to rerun.
 
 Notes:
 - Segmentation run directories are now modality-aware via config key `modality` (`em` or `deepbacs`).

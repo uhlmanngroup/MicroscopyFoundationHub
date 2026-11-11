@@ -5,8 +5,13 @@ __pycache__/
 
 # Latex generated files
 *.tex
+!tables/EM-paired-rerun.tex
 
 /docs/csv-results/*
+outputs/*
+paper/*
+slides/*
+tables/* 
 
 # C extensions
 *.so

@@ -1,4 +1,4 @@
-"""Generate the Lucchi++ summary comparison plot.
+"""Generate the paper's Figure 2 from the current results workbook.
 
 Example (local; absolute paths are user-specific):
     python scripts/analysis/fancy_plot.py
@@ -10,20 +10,40 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+from openpyxl import load_workbook
 from pathlib import Path
-import re
 
-# === CONFIG (edit here) ===
-CONFIG = {
-    "summary_dir": Path("/Users/cfuste/Documents/Results/DINO-LoRA/seg/summary-output"),
-    "summary_files": {
-        "DINOv2": "summary-dinov2.csv",
-        "DINOv3": "summary-dinov3.csv",
-        "OpenCLIP": "summary-openclip.csv",
+# Keep exactly the six VFM rows of the published Figure 2, using the ViT-L
+# variants reported in main Tables 1 and 2 for all three model families.
+# Each tuple is (sheet, dataset row, header row, frozen-mean cell, LoRA-mean cell).
+FIGURE_2_CELLS = {
+    "DINOv2": {
+        "lucchi": ("Individual", 9, 8, "J9", "L9"),
+        "paired": ("Paired", 5, 2, "J5", "L5"),
     },
-    "metric_col": "foreground_iou_mean",  # IoUf
+    "DINOv3": {
+        "lucchi": ("Individual", 4, 2, "H4", "L4"),
+        "paired": ("Paired", 11, 8, "J11", "L11"),
+    },
+    "OpenCLIP": {
+        "lucchi": ("Individual", 4, 2, "N4", "R4"),
+        "paired": ("Paired", 17, 14, "B17", "D17"),
+    },
 }
-metric_col = CONFIG["metric_col"]
+MODEL_VARIANTS = {
+    "DINOv2": "ViT-L/14",
+    "DINOv3": "ViT-L/16",
+    "OpenCLIP": "ViT-L/14",
+}
+MODEL_LABELS = {
+    "DINOv2": "DINOv2-L/14",
+    "DINOv3": "DINOv3-L/16",
+    "OpenCLIP": "OpenCLIP ViT-L/14",
+}
+WORKBOOK_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "outputs/2026-11-04-results-workbook/Results_Report_All_Experiments.xlsx"
+)
 
 STYLE_CONFIGS = {
     "default": {
@@ -38,7 +58,7 @@ STYLE_CONFIGS = {
         "legend_labels": {
             "Supervised": "Supervised baseline",
             "Zero-shot": "Zero-shot baseline",
-            "Ours": "Ours (zero-shot)",
+            "Ours": "Ours (frozen)",
             "Improve": "+LoRA",
         },
         "legend_kwargs": {
@@ -77,69 +97,35 @@ STYLE_CONFIGS = {
     },
 }
 
-SIZE_RANK = {
-    "tiny": 0,
-    "small": 1,
-    "base": 2,
-    "large": 3,
-    "giant": 4,
-    "huge": 5,
-}
-VIT_RANK = {
-    "vit-s": 0,
-    "vit-b": 1,
-    "vit-l": 2,
-    "vit-g": 3,
-    "vit-h": 4,
-    "vit-bigg": 5,
-}
-
-def _normalize_bool(series: pd.Series) -> pd.Series:
-    mapping = {"true": True, "false": False, "1": True, "0": False}
-    return (
-        series.astype(str).str.strip().str.lower().map(mapping, na_action="ignore").fillna(False)
-    )
-
-def _rank_size(value: str) -> int:
-    s = str(value).strip().lower()
-    if s in SIZE_RANK:
-        return SIZE_RANK[s]
-    match = re.match(r"vit[-_]?([a-z]+)", s)
-    if match:
-        key = f"vit-{match.group(1)}"
-        return VIT_RANK.get(key, -1)
-    return -1
-
-def _load_summary(label: str, filename: str) -> pd.DataFrame:
-    path = CONFIG["summary_dir"] / filename
-    if not path.is_file():
-        raise FileNotFoundError(f"{label} summary not found: {path}")
-    df = pd.read_csv(path)
-    df["dino_size"] = df["dino_size"].astype(str).str.lower()
-    df["dataset_type"] = df["dataset_type"].astype(str).str.lower()
-    df["use_lora"] = _normalize_bool(df["use_lora"])
-    return df
-
-def _select_largest_model(df: pd.DataFrame) -> pd.DataFrame:
-    ranks = df["dino_size"].apply(_rank_size)
-    if ranks.max() < 0:
-        sizes = sorted(df["dino_size"].unique().tolist())
-        raise RuntimeError(f"Unable to rank model sizes from: {sizes}")
-    return df.loc[ranks == ranks.max()].copy()
-
-def get_pair(df: pd.DataFrame, dataset_type: str) -> tuple[float, float]:
-    dataset_type = dataset_type.lower()
-    base_val = df[
-        (df["dataset_type"] == dataset_type) &
-        (df["use_lora"] == False)
-    ][metric_col].iloc[0]
-
-    lora_val = df[
-        (df["dataset_type"] == dataset_type) &
-        (df["use_lora"] == True)
-    ][metric_col].iloc[0]
-
-    return base_val, lora_val
+def load_figure_results(workbook_path: Path) -> dict:
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    results = {}
+    try:
+        for model, datasets in FIGURE_2_CELLS.items():
+            results[model] = {}
+            for dataset, (sheet_name, row, header_row, frozen_cell, lora_cell) in datasets.items():
+                sheet = workbook[sheet_name]
+                expected_row = "Lucchi++" if dataset == "lucchi" else "Macro"
+                if sheet.cell(row=row, column=1).value != expected_row:
+                    raise ValueError(f"Unexpected dataset at {sheet_name}!A{row}")
+                for cell, mode in ((frozen_cell, "Frozen"), (lora_cell, "LoRA")):
+                    header = str(sheet.cell(row=header_row, column=sheet[cell].column).value)
+                    # The Individual sheet omits the DINOv3/OpenCLIP variant
+                    # from its headers; the Paired sheet names all variants.
+                    variant_in_header = model == "DINOv2" or dataset == "paired"
+                    if (model not in header or mode not in header or "Mean" not in header
+                            or (variant_in_header and MODEL_VARIANTS[model] not in header)):
+                        raise ValueError(f"Unexpected column at {sheet_name}!{cell}: {header}")
+                frozen = sheet[frozen_cell].value
+                lora = sheet[lora_cell].value
+                if not isinstance(frozen, (int, float)):
+                    raise ValueError(f"Missing frozen score at {sheet_name}!{frozen_cell}")
+                if lora is not None and not isinstance(lora, (int, float)):
+                    raise ValueError(f"Invalid LoRA score at {sheet_name}!{lora_cell}")
+                results[model][dataset] = (float(frozen), float(lora) if lora is not None else np.nan)
+    finally:
+        workbook.close()
+    return results
 
 
 def parse_args() -> argparse.Namespace:
@@ -158,13 +144,7 @@ def parse_args() -> argparse.Namespace:
     )
     return ap.parse_args()
 
-summary_data = {}
-for label, filename in CONFIG["summary_files"].items():
-    summary_df = _select_largest_model(_load_summary(label, filename))
-    summary_data[label] = {
-        "paired": get_pair(summary_df, "paired"),
-        "lucchi": get_pair(summary_df, "lucchi"),
-    }
+summary_data = load_figure_results(WORKBOOK_PATH)
 
 # === 2) External baselines (from the papers) ===
 # All values are foreground IoU in [0, 1].
@@ -187,21 +167,22 @@ external_df = pd.DataFrame(external_rows)
 external_df["new"] = np.nan    # no LoRA overlay for these
 external_df["is_ours"] = False
 
-# === 3) Your methods (Lucchi++ & Paired, largest model per backbone) ===
+# === 3) Your methods (Lucchi++ & Paired, main-table ViT-L variants) ===
 our_rows = []
 for label in ("DINOv2", "DINOv3", "OpenCLIP"):
     paired_base, paired_lora = summary_data[label]["paired"]
     lucchi_base, lucchi_lora = summary_data[label]["lucchi"]
+    model_label = MODEL_LABELS[label]
     our_rows.extend([
         {
-            "label": f"Paired - VNC+Lucchi++, {label} (Ours)",
+            "label": f"Paired - VNC+Lucchi++, {model_label} (Ours)",
             "group": "Ours",
             "baseline": paired_base,
             "new": paired_lora,
             "is_ours": True,
         },
         {
-            "label": f"Lucchi++, {label} (Ours)",
+            "label": f"Lucchi++, {model_label} (Ours)",
             "group": "Ours",
             "baseline": lucchi_base,
             "new": lucchi_lora,
@@ -217,10 +198,21 @@ plot_df = pd.concat([external_df, our_df], ignore_index=True)
 group_order = {"Supervised": 0, "Zero-shot": 1, "Ours": 2}
 plot_df["group_order"] = plot_df["group"].map(group_order)
 
-# Sort by group, then by baseline performance
+# Keep the published row order while the corrected paired bars move rightward.
+ours_order = {
+    "Lucchi++, DINOv2-L/14 (Ours)": 0,
+    "Lucchi++, DINOv3-L/16 (Ours)": 1,
+    "Lucchi++, OpenCLIP ViT-L/14 (Ours)": 2,
+    "Paired - VNC+Lucchi++, DINOv3-L/16 (Ours)": 3,
+    "Paired - VNC+Lucchi++, DINOv2-L/14 (Ours)": 4,
+    "Paired - VNC+Lucchi++, OpenCLIP ViT-L/14 (Ours)": 5,
+}
+plot_df["display_order"] = plot_df.apply(
+    lambda row: ours_order[row["label"]] if row["is_ours"] else -row["baseline"],
+    axis=1,
+)
 plot_df = plot_df.sort_values(
-    by=["group_order", "baseline"],
-    ascending=[True, False]
+    by=["group_order", "display_order"],
 ).reset_index(drop=True)
 
 # For convenience, convert metric to %
@@ -279,6 +271,16 @@ def build_plot(style_name: str, output_path: Path) -> None:
                     fontsize=10,
                     color=txt_color,
                 )
+        elif row["is_ours"]:
+            ax.text(
+                row["baseline_pct"] + 1,
+                y,
+                "LoRA pending",
+                va="center",
+                ha="left",
+                fontsize=10,
+                color="dimgray",
+            )
 
     labels = [
         ("★ " if is_ours else "") + lbl

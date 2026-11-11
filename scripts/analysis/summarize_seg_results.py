@@ -29,6 +29,7 @@ METRIC_KEYS: Tuple[str, ...] = (
     "mean_iou",
     "foreground_dice",
     "foreground_iou",
+    "foreground_iou_macro",
 )
 
 
@@ -57,6 +58,7 @@ class RunRecord:
     mean_iou: Optional[float]
     foreground_dice: Optional[float]
     foreground_iou: Optional[float]
+    foreground_iou_macro: Optional[float]
     foreground_iou_per_dataset: Dict[str, float]
     best_val_loss: Optional[float]
     best_epoch: Optional[int]
@@ -239,6 +241,11 @@ def collect_runs(
 
         eval_metrics = metrics.get("eval", {})
         train_metrics = metrics.get("train", {})
+        per_dataset_iou = {
+            str(label): float(value)
+            for label, value in (eval_metrics.get("foreground_iou_per_dataset") or {}).items()
+            if isinstance(value, (int, float))
+        }
 
         backbone_cfg = resolve_backbone_cfg(cfg)
         run_records.append(
@@ -269,11 +276,10 @@ def collect_runs(
                 mean_iou=eval_metrics.get("mean_iou"),
                 foreground_dice=eval_metrics.get("foreground_dice"),
                 foreground_iou=eval_metrics.get("foreground_iou"),
-                foreground_iou_per_dataset={
-                    str(label): float(value)
-                    for label, value in (eval_metrics.get("foreground_iou_per_dataset") or {}).items()
-                    if isinstance(value, (int, float))
-                },
+                foreground_iou_macro=(
+                    stats.mean(per_dataset_iou.values()) if per_dataset_iou else None
+                ),
+                foreground_iou_per_dataset=per_dataset_iou,
                 best_val_loss=train_metrics.get("best_val_loss"),
                 best_epoch=train_metrics.get("best_epoch"),
             )
@@ -415,6 +421,7 @@ def serialize_run_record(
         "mean_iou": record.mean_iou,
         "foreground_dice": record.foreground_dice,
         "foreground_iou": record.foreground_iou,
+        "foreground_iou_macro": record.foreground_iou_macro,
         "best_val_loss": record.best_val_loss,
         "best_epoch": record.best_epoch,
     }
@@ -467,6 +474,7 @@ def main() -> None:
         "mean_iou",
         "foreground_dice",
         "foreground_iou",
+        "foreground_iou_macro",
         "best_val_loss",
         "best_epoch",
     ]
@@ -503,6 +511,8 @@ def main() -> None:
         "foreground_dice_std",
         "foreground_iou_mean",
         "foreground_iou_std",
+        "foreground_iou_macro_mean",
+        "foreground_iou_macro_std",
     ]
     summary_fieldnames.extend(
         [
